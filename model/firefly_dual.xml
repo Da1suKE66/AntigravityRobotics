@@ -1,0 +1,404 @@
+<mujoco model="firefly_dual">
+  <compiler angle="radian" meshdir="../assets"/>
+
+  <option integrator="implicitfast" cone="elliptic"/>
+
+  <size nkey="1"/>
+
+  <asset>
+    <mesh name="enclosure_00" content_type="model/stl" file="meshes/workcell/enclosure_00.stl"/>
+    <mesh name="enclosure_01" content_type="model/stl" file="meshes/workcell/enclosure_01.stl"/>
+    <mesh name="enclosure_02" content_type="model/stl" file="meshes/workcell/enclosure_02.stl"/>
+    <mesh name="enclosure_03" content_type="model/stl" file="meshes/workcell/enclosure_03.stl"/>
+    <mesh name="enclosure_04" content_type="model/stl" file="meshes/workcell/enclosure_04.stl"/>
+    <mesh name="enclosure_05" content_type="model/stl" file="meshes/workcell/enclosure_05.stl"/>
+    <mesh name="enclosure_06" content_type="model/stl" file="meshes/workcell/enclosure_06.stl"/>
+    <mesh name="enclosure_07" content_type="model/stl" file="meshes/workcell/enclosure_07.stl"/>
+    <mesh name="enclosure_08" content_type="model/stl" file="meshes/workcell/enclosure_08.stl"/>
+    <mesh name="enclosure_09" content_type="model/stl" file="meshes/workcell/enclosure_09.stl"/>
+    <mesh name="enclosure_10" content_type="model/stl" file="meshes/workcell/enclosure_10.stl"/>
+    <mesh name="enclosure_12" content_type="model/stl" file="meshes/workcell/enclosure_12.stl"/>
+    <mesh name="enclosure_13" content_type="model/stl" file="meshes/workcell/enclosure_13.stl"/>
+    <mesh name="enclosure_14" content_type="model/stl" file="meshes/workcell/enclosure_14.stl"/>
+    <mesh name="enclosure_15" content_type="model/stl" file="meshes/workcell/enclosure_15.stl"/>
+    <mesh name="enclosure_16" content_type="model/stl" file="meshes/workcell/enclosure_16.stl"/>
+    <mesh name="enclosure_17" content_type="model/stl" file="meshes/workcell/enclosure_17.stl"/>
+    <mesh name="enclosure_18" content_type="model/stl" file="meshes/workcell/enclosure_18.stl"/>
+    <mesh name="rail_0" content_type="model/stl" file="meshes/workcell/rail_0.stl"/>
+    <mesh name="rail_1" content_type="model/stl" file="meshes/workcell/rail_1.stl"/>
+    <mesh name="rail_2" content_type="model/stl" file="meshes/workcell/rail_2.stl"/>
+    <mesh name="rail_3" content_type="model/stl" file="meshes/workcell/rail_3.stl"/>
+    <mesh name="post_adapter" content_type="model/stl" file="meshes/workcell/post_adapter.stl"/>
+    <mesh name="adapter_bolt_35" content_type="model/stl" file="meshes/workcell/adapter_bolt_35.stl"/>
+    <mesh name="adapter_bolt_36" content_type="model/stl" file="meshes/workcell/adapter_bolt_36.stl"/>
+    <mesh name="adapter_bolt_37" content_type="model/stl" file="meshes/workcell/adapter_bolt_37.stl"/>
+    <mesh name="adapter_bolt_38" content_type="model/stl" file="meshes/workcell/adapter_bolt_38.stl"/>
+    <mesh name="post_socket" content_type="model/stl" file="meshes/workcell/post_socket.stl"/>
+    <mesh name="socket_fastener_39" content_type="model/stl" file="meshes/workcell/socket_fastener_39.stl"/>
+    <mesh name="socket_fastener_40" content_type="model/stl" file="meshes/workcell/socket_fastener_40.stl"/>
+    <mesh name="socket_fastener_41" content_type="model/stl" file="meshes/workcell/socket_fastener_41.stl"/>
+    <mesh name="socket_fastener_42" content_type="model/stl" file="meshes/workcell/socket_fastener_42.stl"/>
+    <mesh name="socket_fastener_43" content_type="model/stl" file="meshes/workcell/socket_fastener_43.stl"/>
+    <mesh name="socket_fastener_44" content_type="model/stl" file="meshes/workcell/socket_fastener_44.stl"/>
+    <mesh name="socket_fastener_47" content_type="model/stl" file="meshes/workcell/socket_fastener_47.stl"/>
+    <mesh name="socket_fastener_48" content_type="model/stl" file="meshes/workcell/socket_fastener_48.stl"/>
+    <mesh name="socket_fastener_49" content_type="model/stl" file="meshes/workcell/socket_fastener_49.stl"/>
+    <mesh name="socket_fastener_50" content_type="model/stl" file="meshes/workcell/socket_fastener_50.stl"/>
+    <mesh name="post_profile" content_type="model/stl" file="meshes/workcell/post_profile.stl"/>
+    <mesh name="post_cap" content_type="model/stl" file="meshes/workcell/post_cap.stl"/>
+    <mesh name="post_cap_bolt" content_type="model/stl" file="meshes/workcell/post_cap_bolt.stl"/>
+    <mesh name="base_link" content_type="model/stl" file="meshes/arm/base_link.STL"/>
+    <mesh name="link_1" content_type="model/stl" file="meshes/arm/link_1.STL"/>
+    <mesh name="link_2" content_type="model/stl" file="meshes/arm/link_2.STL"/>
+    <mesh name="link_3" content_type="model/stl" file="meshes/arm/link_3.STL"/>
+    <mesh name="link_4" content_type="model/stl" file="meshes/arm/link_4.STL"/>
+    <mesh name="link_5" content_type="model/stl" file="meshes/arm/link_5.STL"/>
+    <mesh name="gr100_base_link" content_type="model/stl" file="meshes/arm/gr100_base_link.STL"/>
+    <mesh name="gr100_link_1" content_type="model/stl" file="meshes/arm/gr100_link_1.STL"/>
+    <mesh name="gr100_link_2" content_type="model/stl" file="meshes/arm/gr100_link_2.STL"/>
+    <mesh name="A_fixed" content_type="model/stl" file="meshes/brackets/A_fixed.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="B_camera_plate" content_type="model/stl" file="meshes/brackets/B_camera_plate.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="d405" content_type="model/stl" file="meshes/d405/d405.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="post_u_piece" content_type="model/stl" file="meshes/d435/post_u_piece.stl"/>
+    <mesh name="camera_mount_plate" content_type="model/stl" file="meshes/d435/camera_mount_plate.stl"/>
+    <mesh name="d435_display" content_type="model/obj" file="meshes/d435/d435_display.obj"/>
+  </asset>
+
+  <worldbody>
+    <body name="workcell_base">
+      <body name="e3_housing_cad_frame" pos="0.121 0 0.085" quat="0 0 0.707107 0.707107">
+        <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0 0.196078 0.8 1" mass="0" mesh="enclosure_00"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.0509804 0.0509804 0.0509804 1" mass="0" mesh="enclosure_01"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.0705882 0.0705882 0.0705882 1" mass="0" mesh="enclosure_02"/>
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.141176 0.141176 0.141176 1" mass="0" mesh="enclosure_03"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.160784 0.160784 0.160784 1" mass="0" mesh="enclosure_04"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.215686 0.215686 0.215686 1" mass="0" mesh="enclosure_05"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.352941 0.352941 0.352941 1" mass="0" mesh="enclosure_06"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.376471 0.341176 0.305882 1" mass="0" mesh="enclosure_07"/>
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.454902 0.454902 0.454902 1" mass="0" mesh="enclosure_08"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.592157 0.639216 0.854902 1" mass="0" mesh="enclosure_09"/>
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.596078 0.643137 0.862745 1" mass="0" mesh="enclosure_10"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 0 0 1" mass="0" mesh="enclosure_12"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 0.215686 0 1" mass="0" mesh="enclosure_13"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 0.215686 0.0509804 1" mass="0" mesh="enclosure_14"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 0.533333 0.00392157 1" mass="0" mesh="enclosure_15"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 0.752941 0.027451 1" mass="0" mesh="enclosure_16"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 0 1" mass="0" mesh="enclosure_17"/>
+        <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="enclosure_18"/>
+        <body name="mounting_rails">
+          <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64 0.7 0.75 1" mass="0" mesh="rail_0"/>
+          <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64 0.7 0.75 1" mass="0" mesh="rail_1"/>
+          <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64 0.7 0.75 1" mass="0" mesh="rail_2"/>
+          <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64 0.7 0.75 1" mass="0" mesh="rail_3"/>
+        </body>
+      </body>
+      <body name="post_adapter_plate" pos="0.0605 0 0.095" quat="0 0 0 1">
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.6 0.66 0.72 1" mass="0" mesh="post_adapter"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="adapter_bolt_35"/>
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="adapter_bolt_36"/>
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="adapter_bolt_37"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="adapter_bolt_38"/>
+        <body name="post_socket" pos="0 0 0.008">
+          <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.25 0.34 0.41 1" mass="0" mesh="post_socket"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_39"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_40"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_41"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_42"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_43"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_44"/>
+          <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_47"/>
+          <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_48"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_49"/>
+          <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="socket_fastener_50"/>
+          <body name="post_profile">
+            <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64 0.7 0.75 1" mass="0" mesh="post_profile"/>
+            <body name="post_end_cap">
+              <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.92 0.23 0.035 1" mass="0" mesh="post_cap"/>
+              <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.13 0.17 1" mass="0" mesh="post_cap_bolt"/>
+            </body>
+            <body name="top_post_u_piece" pos="-0.0455 -0.0285 0.521" quat="0.5 0.5 0.5 0.5">
+              <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.89 0.29 0.055 1" mass="0" mesh="post_u_piece"/>
+              <body name="top_camera_mount_plate" pos="0.0285 0.015 0.0155">
+                <geom pos="-0.0285 -0.015 -0.0155" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.035 0.36 0.65 1" mass="0" mesh="camera_mount_plate"/>
+                <body name="top_d435_visual_mesh_frame" pos="0 0 -0.0405547" quat="0 1 0 0">
+                  <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64 0.7 0.75 1" mass="0" mesh="d435_display"/>
+                  <body name="top_d435_link_nominal" pos="0.0175 -1.87959e-10 -0.0043" quat="0.5 -0.5 -0.5 -0.5">
+                    <body name="top_d435_depth_frame_nominal">
+                      <body name="top_d435_depth_optical_frame_nominal" quat="0.5 -0.5 0.5 -0.5"/>
+                    </body>
+                    <body name="top_d435_infra1_frame_nominal">
+                      <body name="top_d435_infra1_optical_frame_nominal" quat="0.5 -0.5 0.5 -0.5"/>
+                    </body>
+                    <body name="top_d435_infra2_frame_nominal" pos="0 -0.05 0">
+                      <body name="top_d435_infra2_optical_frame_nominal" quat="0.5 -0.5 0.5 -0.5"/>
+                    </body>
+                    <body name="top_d435_color_frame_nominal" pos="0 0.015 0">
+                      <body name="top_d435_color_optical_frame_nominal" quat="0.5 -0.5 0.5 -0.5">
+                        <camera name="top_d435_cam" quat="0 1 0 0" fovy="58"/>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+                <body name="top_camera_fixing_hole_left" pos="-0.0225 0 -0.0155"/>
+                <body name="top_camera_fixing_hole_right" pos="0.0225 0 -0.0155"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="left_base_link" pos="0.0605 0.35 0.095">
+        <inertial pos="-0.00039208 1.32e-06 0.0365344" quat="0.699426 0.700051 -0.102139 0.101485" mass="0.883293" diaginertia="0.000963252 0.000944508 0.0009302"/>
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64706 0.64706 0.64706 1" mass="0" mesh="base_link"/>
+        <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="base_link"/>
+        <body name="left_link_1" pos="0 0 0.0735">
+          <inertial pos="0.00642042 -0.00188278 0.0243348" quat="0.756584 0.585603 0.226907 -0.182105" mass="0.214639" diaginertia="0.000319067 0.000238501 0.000190201"/>
+          <joint name="left_joint_1" range="-2.86234 2.86234" actuatorfrcrange="-20 20" armature="0.025" damping="0.6" frictionloss="0.15"/>
+          <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_1"/>
+          <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_1"/>
+          <body name="left_link_2" pos="0.0194032 0 0.05">
+            <inertial pos="-5.519e-05 0.00011952 0.133369" quat="0.999999 0.00164817 -0.000247226 7.61738e-05" mass="1.21257" diaginertia="0.0184173 0.0182284 0.000651325"/>
+            <joint name="left_joint_2" range="-1.5708 2.0944" actuatorfrcrange="-20 20" armature="0.025" damping="0.6" frictionloss="0.15" axis="0 1 0"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_2"/>
+            <geom type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_2"/>
+            <body name="left_link_3" pos="0 0 0.27">
+              <inertial pos="-0.057965 -0.0002515 0.166538" quat="0.998114 -0.000870954 -0.0609797 0.00706044" mass="0.910204" diaginertia="0.00909643 0.00898301 0.000824608"/>
+              <joint name="left_joint_3" range="0 3.14159" actuatorfrcrange="-20 20" armature="0.02" damping="0.5" frictionloss="0.12" axis="0 1 0"/>
+              <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_3"/>
+              <geom type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_3"/>
+              <body name="left_link_4" pos="-0.065 0 0.25">
+                <inertial pos="-0.052076 -0.00147323 0.0495767" quat="0.0388802 0.921335 -0.0159038 0.386493" mass="0.494265" diaginertia="0.000952646 0.000813631 0.000323854"/>
+                <joint name="left_joint_4" range="-1.5708 1.5708" actuatorfrcrange="-20 20" armature="0.015" damping="0.4" frictionloss="0.1" axis="0 1 0"/>
+                <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_4"/>
+                <geom type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_4"/>
+                <body name="left_link_5" pos="-0.041 0 0.065">
+                  <inertial pos="0.0372343 0 0.00689289" quat="0.529448 0.468463 0.468507 0.529838" mass="0.391698" diaginertia="0.00023938 0.000229562 0.000167008"/>
+                  <joint name="left_joint_5" range="-1.5708 1.5708" actuatorfrcrange="-5 5" armature="0.005" damping="0.15" frictionloss="0.05" axis="-1 0 0"/>
+                  <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_5"/>
+                  <geom pos="0 0 0" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_5"/>
+                  <body name="left_link_6" pos="0.041 0 0.034">
+                    <inertial pos="-0.00409595 -0.000118 0.041959" quat="0.972591 0.0348923 -0.178222 -0.145211" mass="0.492497" diaginertia="0.000349023 0.000343997 0.000214501"/>
+                    <joint name="left_joint_6" range="-2.96706 2.96706" actuatorfrcrange="-5 5" armature="0.005" damping="0.15" frictionloss="0.05"/>
+                    <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_base_link"/>
+                    <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="gr100_base_link"/>
+                    <site name="left_ee_site" size="0.012" pos="0 0 0.125" group="4" rgba="0.1 0.95 0.3 0.6"/>
+                    <site name="left_tcp_site" size="0.01" pos="0 0 0.17" group="4" rgba="1 0.4 0.1 0.7"/>
+                    <body name="left_grip_link_1" pos="0 -0.014 0.076799">
+                      <inertial pos="-0.00119579 -0.0251989 0.0319636" quat="0.911439 0.267238 -0.0501795 0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
+                      <joint name="left_grip_joint_1" range="0 0.6" actuatorfrcrange="-5 5" armature="0.025" damping="0.6" frictionloss="0.15" axis="-1 0 0"/>
+                      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_1"/>
+                      <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="gr100_link_1"/>
+                    </body>
+                    <body name="left_grip_link_2" pos="0 0.014 0.076799">
+                      <inertial pos="-0.00119579 0.0251989 0.0319636" quat="0.911439 -0.267238 -0.0501795 -0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
+                      <joint name="left_grip_joint_2" range="0 0.6" armature="0.025" damping="0.6" frictionloss="0.15" axis="1 0 0"/>
+                      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_2"/>
+                      <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="gr100_link_2"/>
+                    </body>
+                    <body name="left_A_fixed" pos="-0.02895 -0.029 0.059" quat="0.5 -0.5 0.5 0.5">
+                      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.06 0.36 0.65 1" mass="0" mesh="A_fixed"/>
+                      <body name="left_B_camera_plate" pos="-0.0085 0.033 0.009" quat="0.5 -0.5 -0.5 -0.5">
+                        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.96 0.46 0.07 1" mass="0" mesh="B_camera_plate"/>
+                        <body name="left_wrist_d405_link" pos="0.029 -0.0192 0.02" quat="0.707107 0 0 -0.707107">
+                          <geom pos="0.0038 -0.009 0" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.74 0.77 0.81 1" mass="0" mesh="d405"/>
+                          <body name="left_wrist_d405_depth_frame">
+                            <body name="left_wrist_d405_depth_optical_frame" quat="0.5 -0.5 0.5 -0.5"/>
+                          </body>
+                          <body name="left_wrist_d405_infra1_frame">
+                            <body name="left_wrist_d405_infra1_optical_frame" quat="0.5 -0.5 0.5 -0.5"/>
+                          </body>
+                          <body name="left_wrist_d405_infra2_frame" pos="0 -0.018 0">
+                            <body name="left_wrist_d405_infra2_optical_frame" quat="0.5 -0.5 0.5 -0.5"/>
+                          </body>
+                          <body name="left_wrist_d405_color_frame">
+                            <body name="left_wrist_d405_color_optical_frame" quat="0.5 -0.5 0.5 -0.5">
+                              <camera name="left_wrist_d405_cam" quat="0 1 0 0" fovy="58"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="right_base_link" pos="0.0605 -0.35 0.095">
+        <inertial pos="-0.00039208 1.32e-06 0.0365344" quat="0.699426 0.700051 -0.102139 0.101485" mass="0.883293" diaginertia="0.000963252 0.000944508 0.0009302"/>
+        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.64706 0.64706 0.64706 1" mass="0" mesh="base_link"/>
+        <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="base_link"/>
+        <body name="right_link_1" pos="0 0 0.0735">
+          <inertial pos="0.00642042 -0.00188278 0.0243348" quat="0.756584 0.585603 0.226907 -0.182105" mass="0.214639" diaginertia="0.000319067 0.000238501 0.000190201"/>
+          <joint name="right_joint_1" range="-2.86234 2.86234" actuatorfrcrange="-20 20" armature="0.025" damping="0.6" frictionloss="0.15"/>
+          <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_1"/>
+          <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_1"/>
+          <body name="right_link_2" pos="0.0194032 0 0.05">
+            <inertial pos="-5.519e-05 0.00011952 0.133369" quat="0.999999 0.00164817 -0.000247226 7.61738e-05" mass="1.21257" diaginertia="0.0184173 0.0182284 0.000651325"/>
+            <joint name="right_joint_2" range="-1.5708 2.0944" actuatorfrcrange="-20 20" armature="0.025" damping="0.6" frictionloss="0.15" axis="0 1 0"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_2"/>
+            <geom type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_2"/>
+            <body name="right_link_3" pos="0 0 0.27">
+              <inertial pos="-0.057965 -0.0002515 0.166538" quat="0.998114 -0.000870954 -0.0609797 0.00706044" mass="0.910204" diaginertia="0.00909643 0.00898301 0.000824608"/>
+              <joint name="right_joint_3" range="0 3.14159" actuatorfrcrange="-20 20" armature="0.02" damping="0.5" frictionloss="0.12" axis="0 1 0"/>
+              <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_3"/>
+              <geom type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_3"/>
+              <body name="right_link_4" pos="-0.065 0 0.25">
+                <inertial pos="-0.052076 -0.00147323 0.0495767" quat="0.0388802 0.921335 -0.0159038 0.386493" mass="0.494265" diaginertia="0.000952646 0.000813631 0.000323854"/>
+                <joint name="right_joint_4" range="-1.5708 1.5708" actuatorfrcrange="-20 20" armature="0.015" damping="0.4" frictionloss="0.1" axis="0 1 0"/>
+                <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_4"/>
+                <geom type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_4"/>
+                <body name="right_link_5" pos="-0.041 0 0.065">
+                  <inertial pos="0.0372343 0 0.00689289" quat="0.529448 0.468463 0.468507 0.529838" mass="0.391698" diaginertia="0.00023938 0.000229562 0.000167008"/>
+                  <joint name="right_joint_5" range="-1.5708 1.5708" actuatorfrcrange="-5 5" armature="0.005" damping="0.15" frictionloss="0.05" axis="-1 0 0"/>
+                  <geom pos="0 0 0" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="link_5"/>
+                  <geom pos="0 0 0" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="link_5"/>
+                  <body name="right_link_6" pos="0.041 0 0.034">
+                    <inertial pos="-0.00409595 -0.000118 0.041959" quat="0.972591 0.0348923 -0.178222 -0.145211" mass="0.492497" diaginertia="0.000349023 0.000343997 0.000214501"/>
+                    <joint name="right_joint_6" range="-2.96706 2.96706" actuatorfrcrange="-5 5" armature="0.005" damping="0.15" frictionloss="0.05"/>
+                    <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_base_link"/>
+                    <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="gr100_base_link"/>
+                    <site name="right_ee_site" size="0.012" pos="0 0 0.125" group="4" rgba="0.1 0.95 0.3 0.6"/>
+                    <site name="right_tcp_site" size="0.01" pos="0 0 0.17" group="4" rgba="1 0.4 0.1 0.7"/>
+                    <body name="right_grip_link_1" pos="0 -0.014 0.076799">
+                      <inertial pos="-0.00119579 -0.0251989 0.0319636" quat="0.911439 0.267238 -0.0501795 0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
+                      <joint name="right_grip_joint_1" range="0 0.6" actuatorfrcrange="-5 5" armature="0.025" damping="0.6" frictionloss="0.15" axis="-1 0 0"/>
+                      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_1"/>
+                      <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="gr100_link_1"/>
+                    </body>
+                    <body name="right_grip_link_2" pos="0 0.014 0.076799">
+                      <inertial pos="-0.00119579 0.0251989 0.0319636" quat="0.911439 -0.267238 -0.0501795 -0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
+                      <joint name="right_grip_joint_2" range="0 0.6" armature="0.025" damping="0.6" frictionloss="0.15" axis="1 0 0"/>
+                      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_2"/>
+                      <geom quat="1 0 0 0" type="mesh" condim="4" group="3" friction="0.8 0.02 0.002" solref="0.008" rgba="0.2 0.65 0.95 0.4" mesh="gr100_link_2"/>
+                    </body>
+                    <body name="right_A_fixed" pos="-0.02895 -0.029 0.059" quat="0.5 -0.5 0.5 0.5">
+                      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.06 0.36 0.65 1" mass="0" mesh="A_fixed"/>
+                      <body name="right_B_camera_plate" pos="-0.0085 0.033 0.009" quat="0.5 -0.5 -0.5 -0.5">
+                        <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.96 0.46 0.07 1" mass="0" mesh="B_camera_plate"/>
+                        <body name="right_wrist_d405_link" pos="0.029 -0.0192 0.02" quat="0.707107 0 0 -0.707107">
+                          <geom pos="0.0038 -0.009 0" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.74 0.77 0.81 1" mass="0" mesh="d405"/>
+                          <body name="right_wrist_d405_depth_frame">
+                            <body name="right_wrist_d405_depth_optical_frame" quat="0.5 -0.5 0.5 -0.5"/>
+                          </body>
+                          <body name="right_wrist_d405_infra1_frame">
+                            <body name="right_wrist_d405_infra1_optical_frame" quat="0.5 -0.5 0.5 -0.5"/>
+                          </body>
+                          <body name="right_wrist_d405_infra2_frame" pos="0 -0.018 0">
+                            <body name="right_wrist_d405_infra2_optical_frame" quat="0.5 -0.5 0.5 -0.5"/>
+                          </body>
+                          <body name="right_wrist_d405_color_frame">
+                            <body name="right_wrist_d405_color_optical_frame" quat="0.5 -0.5 0.5 -0.5">
+                              <camera name="right_wrist_d405_cam" quat="0 1 0 0" fovy="58"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <contact>
+    <exclude body1="workcell_base" body2="e3_housing_cad_frame"/>
+    <exclude body1="e3_housing_cad_frame" body2="mounting_rails"/>
+    <exclude body1="workcell_base" body2="post_adapter_plate"/>
+    <exclude body1="post_adapter_plate" body2="post_socket"/>
+    <exclude body1="post_socket" body2="post_profile"/>
+    <exclude body1="post_profile" body2="post_end_cap"/>
+    <exclude body1="post_profile" body2="top_post_u_piece"/>
+    <exclude body1="top_post_u_piece" body2="top_camera_mount_plate"/>
+    <exclude body1="top_camera_mount_plate" body2="top_d435_visual_mesh_frame"/>
+    <exclude body1="top_d435_visual_mesh_frame" body2="top_d435_link_nominal"/>
+    <exclude body1="top_d435_link_nominal" body2="top_d435_depth_frame_nominal"/>
+    <exclude body1="top_d435_depth_frame_nominal" body2="top_d435_depth_optical_frame_nominal"/>
+    <exclude body1="top_d435_link_nominal" body2="top_d435_infra1_frame_nominal"/>
+    <exclude body1="top_d435_infra1_frame_nominal" body2="top_d435_infra1_optical_frame_nominal"/>
+    <exclude body1="top_d435_link_nominal" body2="top_d435_infra2_frame_nominal"/>
+    <exclude body1="top_d435_infra2_frame_nominal" body2="top_d435_infra2_optical_frame_nominal"/>
+    <exclude body1="top_d435_link_nominal" body2="top_d435_color_frame_nominal"/>
+    <exclude body1="top_d435_color_frame_nominal" body2="top_d435_color_optical_frame_nominal"/>
+    <exclude body1="top_camera_mount_plate" body2="top_camera_fixing_hole_left"/>
+    <exclude body1="top_camera_mount_plate" body2="top_camera_fixing_hole_right"/>
+    <exclude body1="workcell_base" body2="left_base_link"/>
+    <exclude body1="left_base_link" body2="left_link_1"/>
+    <exclude body1="left_link_1" body2="left_link_2"/>
+    <exclude body1="left_link_2" body2="left_link_3"/>
+    <exclude body1="left_link_3" body2="left_link_4"/>
+    <exclude body1="left_link_4" body2="left_link_5"/>
+    <exclude body1="left_link_5" body2="left_link_6"/>
+    <exclude body1="left_link_6" body2="left_grip_link_1"/>
+    <exclude body1="left_link_6" body2="left_grip_link_2"/>
+    <exclude body1="left_link_6" body2="left_A_fixed"/>
+    <exclude body1="left_A_fixed" body2="left_B_camera_plate"/>
+    <exclude body1="left_B_camera_plate" body2="left_wrist_d405_link"/>
+    <exclude body1="left_wrist_d405_link" body2="left_wrist_d405_depth_frame"/>
+    <exclude body1="left_wrist_d405_depth_frame" body2="left_wrist_d405_depth_optical_frame"/>
+    <exclude body1="left_wrist_d405_link" body2="left_wrist_d405_infra1_frame"/>
+    <exclude body1="left_wrist_d405_infra1_frame" body2="left_wrist_d405_infra1_optical_frame"/>
+    <exclude body1="left_wrist_d405_link" body2="left_wrist_d405_infra2_frame"/>
+    <exclude body1="left_wrist_d405_infra2_frame" body2="left_wrist_d405_infra2_optical_frame"/>
+    <exclude body1="left_wrist_d405_link" body2="left_wrist_d405_color_frame"/>
+    <exclude body1="left_wrist_d405_color_frame" body2="left_wrist_d405_color_optical_frame"/>
+    <exclude body1="workcell_base" body2="right_base_link"/>
+    <exclude body1="right_base_link" body2="right_link_1"/>
+    <exclude body1="right_link_1" body2="right_link_2"/>
+    <exclude body1="right_link_2" body2="right_link_3"/>
+    <exclude body1="right_link_3" body2="right_link_4"/>
+    <exclude body1="right_link_4" body2="right_link_5"/>
+    <exclude body1="right_link_5" body2="right_link_6"/>
+    <exclude body1="right_link_6" body2="right_grip_link_1"/>
+    <exclude body1="right_link_6" body2="right_grip_link_2"/>
+    <exclude body1="right_link_6" body2="right_A_fixed"/>
+    <exclude body1="right_A_fixed" body2="right_B_camera_plate"/>
+    <exclude body1="right_B_camera_plate" body2="right_wrist_d405_link"/>
+    <exclude body1="right_wrist_d405_link" body2="right_wrist_d405_depth_frame"/>
+    <exclude body1="right_wrist_d405_depth_frame" body2="right_wrist_d405_depth_optical_frame"/>
+    <exclude body1="right_wrist_d405_link" body2="right_wrist_d405_infra1_frame"/>
+    <exclude body1="right_wrist_d405_infra1_frame" body2="right_wrist_d405_infra1_optical_frame"/>
+    <exclude body1="right_wrist_d405_link" body2="right_wrist_d405_infra2_frame"/>
+    <exclude body1="right_wrist_d405_infra2_frame" body2="right_wrist_d405_infra2_optical_frame"/>
+    <exclude body1="right_wrist_d405_link" body2="right_wrist_d405_color_frame"/>
+    <exclude body1="right_wrist_d405_color_frame" body2="right_wrist_d405_color_optical_frame"/>
+    <exclude body1="left_grip_link_1" body2="left_grip_link_2"/>
+    <exclude body1="left_link_5" body2="left_grip_link_1"/>
+    <exclude body1="left_link_5" body2="left_grip_link_2"/>
+    <exclude body1="right_grip_link_1" body2="right_grip_link_2"/>
+    <exclude body1="right_link_5" body2="right_grip_link_1"/>
+    <exclude body1="right_link_5" body2="right_grip_link_2"/>
+  </contact>
+
+  <equality>
+    <joint joint1="left_grip_joint_2" joint2="left_grip_joint_1"/>
+    <joint joint1="right_grip_joint_2" joint2="right_grip_joint_1"/>
+  </equality>
+
+  <actuator>
+    <general name="left_joint_1_motor" joint="left_joint_1" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="left_joint_2_motor" joint="left_joint_2" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="left_joint_3_motor" joint="left_joint_3" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="left_joint_4_motor" joint="left_joint_4" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="left_joint_5_motor" joint="left_joint_5" ctrlrange="-5 5" ctrllimited="true"/>
+    <general name="left_joint_6_motor" joint="left_joint_6" ctrlrange="-5 5" ctrllimited="true"/>
+    <general name="left_grip_joint_1_motor" joint="left_grip_joint_1" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="left_grip_joint_2_motor" joint="left_grip_joint_2" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="right_joint_1_motor" joint="right_joint_1" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="right_joint_2_motor" joint="right_joint_2" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="right_joint_3_motor" joint="right_joint_3" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="right_joint_4_motor" joint="right_joint_4" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="right_joint_5_motor" joint="right_joint_5" ctrlrange="-5 5" ctrllimited="true"/>
+    <general name="right_joint_6_motor" joint="right_joint_6" ctrlrange="-5 5" ctrllimited="true"/>
+    <general name="right_grip_joint_1_motor" joint="right_grip_joint_1" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="right_grip_joint_2_motor" joint="right_grip_joint_2" ctrlrange="-20 20" ctrllimited="true"/>
+  </actuator>
+
+  <keyframe>
+    <key name="home" qpos="0 0.35 1.35 -0.65 0 0 0.25 0.25 0 0.35 1.35 -0.65 0 0 0.25 0.25"/>
+  </keyframe>
+</mujoco>

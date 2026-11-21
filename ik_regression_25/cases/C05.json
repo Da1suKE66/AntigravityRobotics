@@ -1,0 +1,211 @@
+{
+ "id": "C05",
+ "group": "collision",
+ "kind": "contact_at_reference",
+ "title": "左夹指与右腕第 6 连杆三角面相交",
+ "sources": [
+  {
+   "report": "motion",
+   "section": "point_to_point",
+   "id": "medium_01"
+  }
+ ],
+ "input": {
+  "start_q_rad": [
+   -0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0,
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ],
+  "target_world": {
+   "left": {
+    "xyz_m": [
+     0.18618240506846523,
+     -0.06537036685677687,
+     0.5252776786082594
+    ],
+    "quat_xyzw": [
+     0.24267938022754496,
+     0.792787218508423,
+     -0.46077603480184265,
+     0.31667110751431593
+    ]
+   },
+   "right": {
+    "xyz_m": [
+     0.12503162438907323,
+     0.016850406695123513,
+     0.42643599688887845
+    ],
+    "quat_xyzw": [
+     -0.5233377472375014,
+     0.8007083844436851,
+     0.20004149388156062,
+     0.2120544414144504
+    ]
+   }
+  }
+ },
+ "reference": {
+  "q_rad": [
+   -1.2856631211087748,
+   -0.1876026087493431,
+   1.429143645420418,
+   0.7135158703487708,
+   0.018482944592718265,
+   -0.6790958879114937,
+   1.3156765247749806,
+   -0.08234542844921694,
+   1.2738168646889374,
+   1.3600328702432725,
+   0.06549506264096117,
+   0.18412726985998917
+  ],
+  "body_pairs": [
+   [
+    "left_grip_link_1",
+    "right_link_6"
+   ]
+  ],
+  "source_meshes": {
+   "left_grip_link_1": {
+    "mesh": "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/gr100_link_1.STL",
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "body_xyz_m": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "body_quat_xyzw": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "right_link_6": {
+    "mesh": "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/gr100_base_link.STL",
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "body_xyz_m": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "body_quat_xyzw": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  }
+ },
+ "expected": {
+  "criterion": "contact_geometry",
+  "stl_intersection": true,
+  "description": "在固定参考关节角，标记对的仿真接触与原始 STL 三角面相交结果应一致。规划器输出的轨迹需要独立回放。"
+ },
+ "recorded": {
+  "gate_status": "all_exact_pairs_rejected_at_target",
+  "candidate_pairs": 1,
+  "rejection_reasons": {
+   "target_collision": 1
+  },
+  "static_reference_contacts": [
+   {
+    "geoms_or_bodies": [
+     "post_profile",
+     "right_grip_link_2"
+    ],
+    "overlap_mm": 9.904596784802058
+   },
+   {
+    "geoms_or_bodies": [
+     "top_post_u_piece",
+     "right_link_4"
+    ],
+    "overlap_mm": 7.646957209834977
+   },
+   {
+    "geoms_or_bodies": [
+     "top_camera_mount_plate",
+     "right_link_4"
+    ],
+    "overlap_mm": 15.479007958416082
+   },
+   {
+    "geoms_or_bodies": [
+     "top_d435_visual_mesh_frame",
+     "right_link_4"
+    ],
+    "overlap_mm": 28.36580557929513
+   },
+   {
+    "geoms_or_bodies": [
+     "left_link_6",
+     "right_A_fixed"
+    ],
+    "overlap_mm": 13.234468270043841
+   },
+   {
+    "geoms_or_bodies": [
+     "left_link_6",
+     "right_B_camera_plate"
+    ],
+    "overlap_mm": 23.859423513928682
+   },
+   {
+    "geoms_or_bodies": [
+     "left_link_6",
+     "right_wrist_d405_link"
+    ],
+    "overlap_mm": 23.4369582496321
+   },
+   {
+    "geoms_or_bodies": [
+     "left_grip_link_1",
+     "right_link_6"
+    ],
+    "overlap_mm": 5.359693279772004
+   },
+   {
+    "geoms_or_bodies": [
+     "left_grip_link_1",
+     "right_A_fixed"
+    ],
+    "overlap_mm": 15.65049587547885
+   },
+   {
+    "geoms_or_bodies": [
+     "left_grip_link_1",
+     "right_B_camera_plate"
+    ],
+    "overlap_mm": 8.831794679779088
+   },
+   {
+    "geoms_or_bodies": [
+     "right_link_3",
+     "right_link_5"
+    ],
+    "overlap_mm": 2.5133464733211417
+   }
+  ],
+  "static_reference_overload": []
+ }
+}

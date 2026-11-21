@@ -1,0 +1,172 @@
+{
+ "id": "H01",
+ "group": "legacy",
+ "kind": "point_to_point",
+ "title": "左腕 J5 到 +90°，旧版从 home 漏解",
+ "sources": [
+  {
+   "report": "before",
+   "section": "physics",
+   "id": "witness_left_wrist_family_025"
+  },
+  {
+   "report": "after",
+   "section": "physics",
+   "id": "witness_left_wrist_family_025"
+  },
+  {
+   "report": "before",
+   "section": "geometry",
+   "id": "left_wrist_family_025"
+  },
+  {
+   "report": "after",
+   "section": "geometry",
+   "id": "left_wrist_family_025"
+  }
+ ],
+ "input": {
+  "start_q_rad": [
+   -0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0,
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ],
+  "target_world": {
+   "left": {
+    "xyz_m": [
+     0.14696711313003616,
+     0.13328404201670335,
+     0.8036419500701565
+    ],
+    "quat_xyzw": [
+     0.6729919014165743,
+     -0.21698364138271758,
+     0.6586215288523207,
+     0.2573279653132003
+    ]
+   },
+   "right": {
+    "xyz_m": [
+     0.3954732418929614,
+     -0.10777173915735005,
+     0.6798593393928292
+    ],
+    "quat_xyzw": [
+     -0.20800668288127366,
+     0.7036727155401302,
+     0.16627484133423254,
+     0.6587340938651839
+    ]
+   }
+  }
+ },
+ "reference": {
+  "q_rad": [
+   -2.2551591852362187,
+   0.16660870102915282,
+   0.20803831870059575,
+   -0.09278819315351305,
+   1.5707963267948966,
+   -1.9132312716574635,
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ]
+ },
+ "expected": {
+  "criterion": "verified_motion",
+  "description": "从给定起点为原始双臂目标找到一条可执行轨迹，独立回放全程无接触、无警告，关节位置、速度和末端保持满足测试阈值。"
+ },
+ "recorded": {
+  "before": {
+   "gate_status": "singular_family_not_exhausted",
+   "complete": false,
+   "candidate_pairs": 0,
+   "rejection_reasons": {},
+   "selected_q_rad": null,
+   "reference_4s": {
+    "passed": true,
+    "contacts": [],
+    "first_contact_s": null,
+    "tail_position_mm": 4.27192483326143e-12,
+    "tail_orientation_deg": 5.220568306030514e-13,
+    "peak_abs_actuator_nm": [
+     3.3036548792747595,
+     4.784820792466879,
+     6.936805972494211,
+     2.6344625665651105,
+     1.9706172691345993,
+     1.443925315871471,
+     0.1905446793570092,
+     3.5345058153872224,
+     4.672555805575319,
+     1.4758791647251057,
+     0.022382908600285033,
+     0.002876200028947411
+    ],
+    "seconds_at_rated_torque": {},
+    "deepest_mesh_contacts": []
+   },
+   "before_branch_count": 0,
+   "after_branch_count": 4
+  },
+  "after": {
+   "gate_status": "verified_from_home",
+   "plan": {
+    "mode": "synchronous",
+    "interpolation": "quintic_rest_to_rest",
+    "start_q_rad": [
+     -0.55,
+     -0.1,
+     1.05,
+     0.74,
+     0.0,
+     0.0,
+     0.55,
+     -0.1,
+     1.05,
+     0.74,
+     0.0,
+     0.0
+    ],
+    "via_q_rad": [],
+    "goal_q_rad": [
+     -2.255159185236219,
+     0.14213616396597847,
+     0.25436805855326594,
+     -0.0996927721672822,
+     1.5707963267948966,
+     -1.9281838954331902,
+     0.550000000000015,
+     -0.10000000000000431,
+     1.0500000000000256,
+     0.73999999999998,
+     -1.4562768625578648e-14,
+     2.2879487426190784e-15
+    ],
+    "ramp_s": 4.0,
+    "hold_s": 4.0,
+    "motion_s": 4.0,
+    "control_period_s": 0.1
+   },
+   "replay": {
+    "passed": true,
+    "contacts": [],
+    "tail_position_mm": 4.7012939319704696e-12,
+    "tail_orientation_deg": 5.167496043295373e-13
+   }
+  }
+ }
+}

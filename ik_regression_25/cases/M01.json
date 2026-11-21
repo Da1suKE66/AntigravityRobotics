@@ -1,0 +1,163 @@
+{
+ "id": "M01",
+ "group": "miss",
+ "kind": "single_pose",
+ "title": "左臂肘腕双重奇异，旧判定分支已穷尽，已有可执行数值解",
+ "sources": [
+  {
+   "report": "motion",
+   "section": "poses",
+   "id": "left_elbow_and_wrist_035"
+  },
+  {
+   "report": "motion",
+   "section": "failed_pose_rechecks",
+   "id": "left_elbow_and_wrist_035"
+  },
+  {
+   "report": "motion",
+   "section": "paths",
+   "id": "right_line_4s",
+   "index_within_targets": 0
+  }
+ ],
+ "input": {
+  "side": "left",
+  "start_q_rad": [
+   -0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ],
+  "target_world": {
+   "xyz_m": [
+    -0.12438228749674132,
+    0.6182450623973638,
+    0.6696139056491914
+   ],
+   "quat_xyzw": [
+    0.32686041320882964,
+    -0.6270202149094066,
+    -0.3718214919891856,
+    0.601462133859523
+   ]
+  },
+  "other_arm_at_home_world": {
+   "xyz_m": [
+    0.3954732418929614,
+    -0.10777173915735005,
+    0.6798593393928292
+   ],
+   "quat_xyzw": [
+    -0.20800668288127366,
+    0.7036727155401302,
+    0.16627484133423254,
+    0.6587340938651839
+   ]
+  }
+ },
+ "reference": {
+  "q_rad": [
+   -1.643975875354463,
+   -0.6680880525197765,
+   0.2543682862562451,
+   1.3904667722586868,
+   -1.5707680256623069,
+   1.5133162471499668
+  ]
+ },
+ "expected": {
+  "criterion": "reachable_branch",
+  "description": "从记录的 home 种子找到至少一个符合关节限位与独立 FK 阈值的几何分支。默认数值 IK 也应达标。 此例还保留同一目标的可执行性对照，并复核常规双臂规划入口。",
+  "verify_numeric_trajectory": true
+ },
+ "recorded": {
+  "selector_status": "no_joint_limit_valid_exact_solution",
+  "selector_candidate_pairs": 0,
+  "complete": true,
+  "raw_wrist_margin_deg": 0.0016215354528282305,
+  "raw_elbow_tangent_margin_deg": 1.304641968720038e-05,
+  "seed_and_model_retries": {
+   "reference_seed": {
+    "count": 1,
+    "complete": false
+   },
+   "pin_fk_home_seed": {
+    "count": 0,
+    "complete": true
+   },
+   "pin_fk_reference_seed": {
+    "count": 1,
+    "complete": false
+   }
+  },
+  "branch_count": 0,
+  "numerical": {
+   "success": true,
+   "attempts": 1,
+   "q_rad": [
+    -1.643968123503025,
+    -1.052664789069614,
+    1.1114653225775761,
+    0.11659576591949747,
+    -1.5707780097385005,
+    0.7119655405762074
+   ],
+   "mujoco_position_mm": 0.0019727718424793384,
+   "mujoco_angle_deg": 0.0007274101440169361,
+   "independently_in_tolerance": true
+  },
+  "branch_rejection_reasons": {
+   "joint_limits": 2,
+   "outside_planar_reach": 1
+  },
+  "numeric_motion": {
+   "plan": {
+    "mode": "synchronous",
+    "interpolation": "quintic_rest_to_rest",
+    "start_q_rad": [
+     -0.55,
+     -0.1,
+     1.05,
+     0.74,
+     0.0,
+     0.0,
+     0.55,
+     -0.1,
+     1.05,
+     0.74,
+     0.0,
+     0.0
+    ],
+    "via_q_rad": [],
+    "goal_q_rad": [
+     -1.643968123503025,
+     -1.052664789069614,
+     1.1114653225775761,
+     0.11659576591949747,
+     -1.5707780097385005,
+     0.7119655405762074,
+     0.55,
+     -0.1,
+     1.05,
+     0.74,
+     0.0,
+     0.0
+    ],
+    "ramp_s": 6.0,
+    "hold_s": 4.0,
+    "motion_s": 6.0,
+    "control_period_s": 0.1
+   },
+   "replay": {
+    "passed": true,
+    "contacts": [],
+    "tail_position_mm": 0.001972771841552594,
+    "tail_orientation_deg": 0.0007274101442124868,
+    "worst_limit_excursion_deg": 0.0
+   }
+  }
+ }
+}

@@ -1,0 +1,224 @@
+{
+ "id": "C01",
+ "group": "collision",
+ "kind": "contact_at_reference",
+ "title": "右臂第 3、5 连杆轻微凸包重叠",
+ "sources": [
+  {
+   "report": "motion",
+   "section": "point_to_point",
+   "id": "near_home_02"
+  },
+  {
+   "report": "motion",
+   "section": "contact_mesh_checks.pairs",
+   "group": "near_home_endpoint",
+   "case": "near_home_02"
+  }
+ ],
+ "input": {
+  "start_q_rad": [
+   -0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0,
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ],
+  "target_world": {
+   "left": {
+    "xyz_m": [
+     0.46690836923056633,
+     0.09842325064180504,
+     0.5989574728537328
+    ],
+    "quat_xyzw": [
+     0.10035007626626169,
+     0.7663169388373453,
+     -0.21215930393779966,
+     0.5980607337026435
+    ]
+   },
+   "right": {
+    "xyz_m": [
+     0.36468837614310595,
+     -0.19334016463632683,
+     0.7226549720092333
+    ],
+    "quat_xyzw": [
+     -0.11717414615067062,
+     0.6957699228530603,
+     0.1618674711522775,
+     0.6899082226714468
+    ]
+   }
+  }
+ },
+ "reference": {
+  "q_rad": [
+   -0.6139041028225677,
+   -0.016610064141231867,
+   1.1590387729469307,
+   0.6262035618828927,
+   0.14004903852683662,
+   -0.23866084150070352,
+   0.35346789286814895,
+   -0.19785045902787712,
+   0.9642241865597474,
+   0.8475547659385991,
+   0.0558293613776244,
+   0.09493636170573028
+  ],
+  "body_pairs": [
+   [
+    "right_link_3",
+    "right_link_5"
+   ]
+  ],
+  "source_meshes": {
+   "right_link_3": {
+    "mesh": "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/link_3.STL",
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "body_xyz_m": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "body_quat_xyzw": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "right_link_5": {
+    "mesh": "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/link_5.STL",
+    "scale": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "body_xyz_m": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "body_quat_xyzw": [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  }
+ },
+ "expected": {
+  "criterion": "contact_geometry",
+  "stl_intersection": false,
+  "description": "在固定参考关节角，标记对的仿真接触与原始 STL 三角面相交结果应一致。规划器输出的轨迹需要独立回放。"
+ },
+ "recorded": {
+  "gate_status": "all_exact_pairs_rejected_at_target",
+  "candidate_pairs": 1,
+  "rejection_reasons": {
+   "target_collision": 1
+  },
+  "static_reference_contacts": [
+   {
+    "geoms_or_bodies": [
+     "right_link_3",
+     "right_link_5"
+    ],
+    "overlap_mm": 0.06514834203309176
+   }
+  ],
+  "static_reference_overload": [],
+  "source_mesh_checks": [
+   {
+    "group": "near_home_endpoint",
+    "case": "near_home_02",
+    "mujoco_contact": true,
+    "mujoco_signed_mm": -0.06514834203309176,
+    "objects": [
+     {
+      "body": "right_link_3",
+      "mesh": "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/link_3.STL",
+      "scale": [
+       1.0,
+       1.0,
+       1.0
+      ],
+      "world_xyz_m": [
+       0.009066512526278131,
+       -0.3393986530625986,
+       0.4903420870625005
+      ],
+      "world_rotation": [
+       [
+        0.7170354647752255,
+        -0.3345561066241509,
+        0.6115000848528697
+       ],
+       [
+        0.23305303886672002,
+        0.9418648339034597,
+        0.2420266839234801
+       ],
+       [
+        -0.6569219309244928,
+        -0.031029762752860693,
+        0.7533198062535842
+       ]
+      ],
+      "triangle_count": 35340
+     },
+     {
+      "body": "right_link_5",
+      "mesh": "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/link_5.STL",
+      "scale": [
+       1.0,
+       1.0,
+       1.0
+      ],
+      "world_xyz_m": [
+       0.17591846676473621,
+       -0.2711574288600918,
+       0.7627472992304217
+      ],
+      "world_rotation": [
+       [
+        0.016127328206018924,
+        -0.3866120631487007,
+        0.9221014162839363
+       ],
+       [
+        -0.02720002699589369,
+        0.9217104171570774,
+        0.38692384965978727
+       ],
+       [
+        -0.9994999088626064,
+        -0.031321231330074584,
+        0.004348867853815937
+       ]
+      ],
+      "triangle_count": 17533
+     }
+    ],
+    "stl_surface_distance_mm": 8.914073757212705,
+    "stl_surfaces_intersect": false,
+    "independent_hull_signed_mm": -0.06514694372582869
+   }
+  ]
+ }
+}

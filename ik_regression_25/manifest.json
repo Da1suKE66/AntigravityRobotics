@@ -1,0 +1,308 @@
+{
+ "format": "firefly-ik-regression",
+ "version": 1,
+ "simulation_only": true,
+ "groups": {
+  "legacy": "历史出错的解",
+  "miss": "本轮几何漏解",
+  "collision": "本轮碰撞",
+  "tracking": "本轮运动误差",
+  "normal": "普通已通过"
+ },
+ "counts": {
+  "legacy": 5,
+  "miss": 5,
+  "collision": 5,
+  "tracking": 5,
+  "normal": 5
+ },
+ "cases": [
+  {
+   "id": "H01",
+   "group": "legacy",
+   "kind": "point_to_point",
+   "title": "左腕 J5 到 +90°，旧版从 home 漏解",
+   "path": "cases/H01.json"
+  },
+  {
+   "id": "H02",
+   "group": "legacy",
+   "kind": "sequence",
+   "title": "连续靠近基座轴和正腕极点，旧版 J1 跳转 180°",
+   "path": "cases/H02.json"
+  },
+  {
+   "id": "H03",
+   "group": "legacy",
+   "kind": "point_to_point",
+   "title": "同一 TCP 的两个肘形，原数值首解在模型内自碰",
+   "path": "cases/H03.json"
+  },
+  {
+   "id": "H04",
+   "group": "legacy",
+   "kind": "point_to_point",
+   "title": "左 J2 接近 9 N·m 额定力矩，旧 4 秒动作触地",
+   "path": "cases/H04.json"
+  },
+  {
+   "id": "H05",
+   "group": "legacy",
+   "kind": "point_to_point",
+   "title": "双臂同步交叉夹指相碰，原目标可分先后执行",
+   "path": "cases/H05.json"
+  },
+  {
+   "id": "M01",
+   "group": "miss",
+   "kind": "single_pose",
+   "title": "左臂肘腕双重奇异，旧判定分支已穷尽，已有可执行数值解",
+   "path": "cases/M01.json"
+  },
+  {
+   "id": "M02",
+   "group": "miss",
+   "kind": "single_pose",
+   "title": "左臂肘腕双重奇异，旧判定分支已穷尽",
+   "path": "cases/M02.json"
+  },
+  {
+   "id": "M03",
+   "group": "miss",
+   "kind": "single_pose",
+   "title": "左臂肘腕双重奇异，仅报告奇异解族未穷尽",
+   "path": "cases/M03.json"
+  },
+  {
+   "id": "M04",
+   "group": "miss",
+   "kind": "single_pose",
+   "title": "右臂肘腕双重奇异，旧判定分支已穷尽",
+   "path": "cases/M04.json"
+  },
+  {
+   "id": "M05",
+   "group": "miss",
+   "kind": "single_pose",
+   "title": "右臂肘腕双重奇异，仅报告奇异解族未穷尽",
+   "path": "cases/M05.json"
+  },
+  {
+   "id": "C01",
+   "group": "collision",
+   "kind": "contact_at_reference",
+   "title": "右臂第 3、5 连杆轻微凸包重叠",
+   "path": "cases/C01.json"
+  },
+  {
+   "id": "C02",
+   "group": "collision",
+   "kind": "contact_at_reference",
+   "title": "左臂第 3、5 连杆凸包重叠",
+   "path": "cases/C02.json"
+  },
+  {
+   "id": "C03",
+   "group": "collision",
+   "kind": "contact_at_reference",
+   "title": "两臂分别报告第 3、5 连杆接触",
+   "path": "cases/C03.json"
+  },
+  {
+   "id": "C04",
+   "group": "collision",
+   "kind": "contact_at_reference",
+   "title": "立柱型材与右腕第 6 连杆三角面相交",
+   "path": "cases/C04.json"
+  },
+  {
+   "id": "C05",
+   "group": "collision",
+   "kind": "contact_at_reference",
+   "title": "左夹指与右腕第 6 连杆三角面相交",
+   "path": "cases/C05.json"
+  },
+  {
+   "id": "E01",
+   "group": "tracking",
+   "kind": "cartesian_path",
+   "title": "双臂向上画圆，出现模型接触，4 秒",
+   "path": "cases/E01.json"
+  },
+  {
+   "id": "E02",
+   "group": "tracking",
+   "kind": "cartesian_path",
+   "title": "双臂向下画圆，4 秒",
+   "path": "cases/E02.json"
+  },
+  {
+   "id": "E03",
+   "group": "tracking",
+   "kind": "cartesian_path",
+   "title": "双臂向下画圆，8 秒",
+   "path": "cases/E03.json"
+  },
+  {
+   "id": "E04",
+   "group": "tracking",
+   "kind": "cartesian_path",
+   "title": "双臂带 ±12° 转腕的 8 字，4 秒",
+   "path": "cases/E04.json"
+  },
+  {
+   "id": "E05",
+   "group": "tracking",
+   "kind": "cartesian_path",
+   "title": "双臂带 ±12° 转腕的 8 字，12 秒",
+   "path": "cases/E05.json"
+  },
+  {
+   "id": "P01",
+   "group": "normal",
+   "kind": "point_to_point",
+   "title": "双臂沿世界 X 平移 10 mm",
+   "path": "cases/P01.json"
+  },
+  {
+   "id": "P02",
+   "group": "normal",
+   "kind": "point_to_point",
+   "title": "双臂 J6 转至约 1.1 rad",
+   "path": "cases/P02.json"
+  },
+  {
+   "id": "P03",
+   "group": "normal",
+   "kind": "point_to_point",
+   "title": "home 附近的小幅双臂动作 08",
+   "path": "cases/P03.json"
+  },
+  {
+   "id": "P04",
+   "group": "normal",
+   "kind": "point_to_point",
+   "title": "home 附近的小幅双臂动作 11",
+   "path": "cases/P04.json"
+  },
+  {
+   "id": "P05",
+   "group": "normal",
+   "kind": "point_to_point",
+   "title": "中等幅度的双臂点到点动作",
+   "path": "cases/P05.json"
+  }
+ ],
+ "world_frame": "workcell_base",
+ "tcp": {
+  "frame": "link_6",
+  "local_offset_m": [
+   0,
+   0,
+   0.17
+  ]
+ },
+ "joint_order": [
+  "left_joint_1",
+  "left_joint_2",
+  "left_joint_3",
+  "left_joint_4",
+  "left_joint_5",
+  "left_joint_6",
+  "right_joint_1",
+  "right_joint_2",
+  "right_joint_3",
+  "right_joint_4",
+  "right_joint_5",
+  "right_joint_6"
+ ],
+ "pose_format": {
+  "xyz_m": "metres",
+  "quat_xyzw": "x,y,z,w"
+ },
+ "physics": {
+  "initial_state": "home at rest, factory gripper openings",
+  "home_q_rad": [
+   -0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0,
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ],
+  "control_period_s": 0.1,
+  "physics_step_s": 0.002,
+  "motion_error_sample_period_s": 0.01,
+  "hold_s": 4.0,
+  "rated_nm_per_arm": [
+   9,
+   9,
+   9,
+   9,
+   3,
+   3
+  ]
+ },
+ "tolerances": {
+  "branch_fk_mm": 1.1e-05,
+  "branch_fk_rad": 1.1e-07,
+  "numerical_fk_mm": 0.01,
+  "numerical_fk_rad": 0.0001,
+  "servo_tail_mm": 0.4,
+  "servo_tail_rad": 0.004,
+  "servo_tail_joint_speed_rad_s": 0.01,
+  "max_joint_excursion_rad": 1e-05,
+  "max_speed_to_spec_ratio": 1.01,
+  "tracking_baseline_roundoff_mm": 0.01,
+  "tracking_baseline_roundoff_deg": 0.01
+ },
+ "versions": {
+  "mujoco": "3.3.7",
+  "pinocchio": "3.9.0",
+  "coal": "3.0.2"
+ },
+ "model_files_sha256": {
+  "firefly-sim-ik/model/firefly.xml": "effed8dfedffd32e7f2bb7318a128c6f5ad88fe072bd030e2cb1aa4ec1f20212",
+  "firefly-sim-ik/model/firefly_dual.urdf": "eafe1dab9d964a6ed7492059d7d92989b4a5730dfc0734b6613c4f1fa97c889a",
+  "firefly-sim-ik/joint_specs.json": "5f17bd8057c8761606ebba6dbe3106b9b485719c9514b9e1282f6c55874cdf03",
+  "configs/firefly_sim_ik.json": "42d9d444625f006c8c34d2bd97c0c5fd9f83c189929e767ccc72cfbca5bcf034",
+  "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/gr100_base_link.STL": "fc21728e1926e40d7a400b5d93cebaccec8ea83a80b91c5dcc7aec5b99d01b1b",
+  "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/gr100_link_1.STL": "2b34ffba742404ffd3dc1e36dfaab09be3ce62c2318ca5c84c002826d6be5f40",
+  "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/link_3.STL": "ff5ea1fcefd0e52463aed78b31a5c8d2ef9c2d9010ab564219b8bd99857ff5b8",
+  "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/arm/link_5.STL": "2a2559722d4b91124d5192fe29dcc2587aee895b349fc527eff18a17b2407cbf",
+  "firefly-sim-ik/firefly_viewer_82mm (1)/firefly_viewer_82mm/meshes/workcell/post_profile.stl": "c4add28adaccdb53553d5560167a8b1e3852d91ebb1fb24e03c69aabcfe4ad57"
+ },
+ "source_reports": {
+  "before": {
+   "path": "artifacts/ik_corner_cases.json",
+   "sha256": "5ff7c600405853f0fcfdeeec383f460e8f9f0a4c94f977ac3c7c66d1231c02e9",
+   "seed": 20261119
+  },
+  "after": {
+   "path": "artifacts/ik_corner_cases_fixed.json",
+   "sha256": "11bbcb9c781f888ac9ad78528a043ab16aabb748286d0c13aa54852ec8094da1",
+   "seed": 20261119
+  },
+  "bundle": {
+   "path": "artifacts/bundled_pinocchio_ik.json",
+   "sha256": "357c361d14f877ecdec66c0cd800ed776eb1e5b0f89d92a3b57ec7083fc379ba",
+   "seed": null
+  },
+  "ordinary": {
+   "path": "artifacts/sim_ik_recheck.json",
+   "sha256": "f149596e6e16be3bbde43f69b92c4dee388ec42ac3624ea109ea8e2c21d3a2da",
+   "seed": 20261118
+  },
+  "motion": {
+   "path": "artifacts/ik_motion_evaluation.json",
+   "sha256": "a75966ef57ec1e72afbfc48bc405eccffa371159bb6df01a9b2c955ddd0879d6",
+   "seed": 5347921
+  }
+ }
+}

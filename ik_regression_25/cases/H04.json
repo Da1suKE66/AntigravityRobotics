@@ -1,0 +1,284 @@
+{
+ "id": "H04",
+ "group": "legacy",
+ "kind": "point_to_point",
+ "title": "左 J2 接近 9 N·m 额定力矩，旧 4 秒动作触地",
+ "sources": [
+  {
+   "report": "before",
+   "section": "physics",
+   "id": "load_left_j2_8.99"
+  },
+  {
+   "report": "after",
+   "section": "physics",
+   "id": "load_left_j2_8.99"
+  }
+ ],
+ "input": {
+  "start_q_rad": [
+   -0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0,
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ],
+  "target_world": {
+   "left": {
+    "xyz_m": [
+     0.5483204677892666,
+     0.05091472804974369,
+     0.43797595194346
+    ],
+    "quat_xyzw": [
+     0.23769539903564307,
+     0.8424475118611787,
+     -0.13129598717224206,
+     0.46534336869526993
+    ]
+   },
+   "right": {
+    "xyz_m": [
+     0.3954732418929614,
+     -0.10777173915735005,
+     0.6798593393928292
+    ],
+    "quat_xyzw": [
+     -0.20800668288127366,
+     0.7036727155401302,
+     0.16627484133423254,
+     0.6587340938651839
+    ]
+   }
+  }
+ },
+ "reference": {
+  "q_rad": [
+   -0.55,
+   0.3422695606414095,
+   1.05,
+   0.74,
+   0.0,
+   0.0,
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ]
+ },
+ "expected": {
+  "criterion": "verified_motion",
+  "description": "从给定起点为原始双臂目标找到一条可执行轨迹，独立回放全程无接触、无警告，关节位置、速度和末端保持满足测试阈值。"
+ },
+ "recorded": {
+  "before": {
+   "gate_status": "no_verified_trajectory_from_home",
+   "complete": true,
+   "candidate_pairs": 1,
+   "rejection_reasons": {
+    "trajectory_contact": 1,
+    "trajectory_did_not_settle": 1
+   },
+   "selected_q_rad": null,
+   "reference_4s": {
+    "passed": false,
+    "contacts": [
+     [
+      "floor",
+      "left_grip_link_1"
+     ],
+     [
+      "floor",
+      "left_grip_link_2"
+     ]
+    ],
+    "first_contact_s": 5.113999999999659,
+    "tail_position_mm": 423.98635497944616,
+    "tail_orientation_deg": 40.786925720979205,
+    "peak_abs_actuator_nm": [
+     0.03652029558481473,
+     9.0,
+     6.472496873307441,
+     1.611145638776376,
+     0.0300642042147912,
+     0.005411262300715258,
+     0.19054467935700925,
+     3.5345058153872224,
+     4.67255580557532,
+     1.4758791647251057,
+     0.02238290860028501,
+     0.002876200028947415
+    ],
+    "seconds_at_rated_torque": {
+     "left_joint_2": 4.776
+    },
+    "deepest_mesh_contacts": []
+   },
+   "static_joint_torques": [
+    {
+     "joint": "left_joint_1",
+     "required_nm": 0.0,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": 0.0
+    },
+    {
+     "joint": "left_joint_2",
+     "required_nm": -8.989999999999931,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": -8.989999999999931
+    },
+    {
+     "joint": "left_joint_3",
+     "required_nm": -6.295263507703989,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": -6.29526350770399
+    },
+    {
+     "joint": "left_joint_4",
+     "required_nm": -1.4208322397280435,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": -1.4208322397280426
+    },
+    {
+     "joint": "left_joint_5",
+     "required_nm": -0.0003917271396591815,
+     "limits_nm": [
+      -3.0,
+      3.0
+     ],
+     "applied_at_goal_nm": -0.000391727139659385
+    },
+    {
+     "joint": "left_joint_6",
+     "required_nm": -0.0006227739381261532,
+     "limits_nm": [
+      -3.0,
+      3.0
+     ],
+     "applied_at_goal_nm": -0.0006227739381263523
+    },
+    {
+     "joint": "right_joint_1",
+     "required_nm": -0.19054467935700914,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": -0.19054467935700906
+    },
+    {
+     "joint": "right_joint_2",
+     "required_nm": -3.5345058153872175,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": -3.5345058153872175
+    },
+    {
+     "joint": "right_joint_3",
+     "required_nm": -4.672555805575318,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": -4.6725558055753185
+    },
+    {
+     "joint": "right_joint_4",
+     "required_nm": -1.4758791647251046,
+     "limits_nm": [
+      -9.0,
+      9.0
+     ],
+     "applied_at_goal_nm": -1.4758791647251048
+    },
+    {
+     "joint": "right_joint_5",
+     "required_nm": -0.02238290860028498,
+     "limits_nm": [
+      -3.0,
+      3.0
+     ],
+     "applied_at_goal_nm": -0.02238290860028495
+    },
+    {
+     "joint": "right_joint_6",
+     "required_nm": 0.0028762000289466183,
+     "limits_nm": [
+      -3.0,
+      3.0
+     ],
+     "applied_at_goal_nm": 0.0028762000289472237
+    }
+   ]
+  },
+  "after": {
+   "gate_status": "verified_from_home",
+   "plan": {
+    "mode": "synchronous",
+    "interpolation": "quintic_rest_to_rest",
+    "start_q_rad": [
+     -0.55,
+     -0.1,
+     1.05,
+     0.74,
+     0.0,
+     0.0,
+     0.55,
+     -0.1,
+     1.05,
+     0.74,
+     0.0,
+     0.0
+    ],
+    "via_q_rad": [],
+    "goal_q_rad": [
+     -0.5499999999999997,
+     0.3422695606414098,
+     1.0499999999999998,
+     0.7400000000000002,
+     -3.0804945445312055e-16,
+     1.7130924659484448e-16,
+     0.550000000000015,
+     -0.10000000000000431,
+     1.0500000000000256,
+     0.73999999999998,
+     -1.4562768625578648e-14,
+     2.2879487426190784e-15
+    ],
+    "ramp_s": 9.0,
+    "hold_s": 4.0,
+    "motion_s": 9.0,
+    "control_period_s": 0.1
+   },
+   "replay": {
+    "passed": true,
+    "contacts": [],
+    "tail_position_mm": 4.509768597802292e-12,
+    "tail_orientation_deg": 2.198324758280293e-13
+   }
+  }
+ }
+}

@@ -1,0 +1,97 @@
+{
+ "id": "M05",
+ "group": "miss",
+ "kind": "single_pose",
+ "title": "右臂肘腕双重奇异，仅报告奇异解族未穷尽",
+ "sources": [
+  {
+   "report": "motion",
+   "section": "poses",
+   "id": "right_elbow_and_wrist_118"
+  },
+  {
+   "report": "motion",
+   "section": "failed_pose_rechecks",
+   "id": "right_elbow_and_wrist_118"
+  }
+ ],
+ "input": {
+  "side": "right",
+  "start_q_rad": [
+   0.55,
+   -0.1,
+   1.05,
+   0.74,
+   0.0,
+   0.0
+  ],
+  "target_world": {
+   "xyz_m": [
+    0.3917870373910638,
+    -0.06245264410903722,
+    0.6052190917572313
+   ],
+   "quat_xyzw": [
+    0.6048232217652248,
+    -0.3254471539169391,
+    0.7263286219005574,
+    -0.026828220756051034
+   ]
+  }
+ },
+ "reference": {
+  "q_rad": [
+   -2.015743534741789,
+   -0.9675156680155413,
+   0.25436805766396275,
+   1.0432703661150957,
+   1.5707962611142323,
+   -1.383943101388576
+  ]
+ },
+ "expected": {
+  "criterion": "reachable_branch",
+  "description": "从记录的 home 种子找到至少一个符合关节限位与独立 FK 阈值的几何分支。默认数值 IK 也应达标。"
+ },
+ "recorded": {
+  "selector_status": "singular_family_not_exhausted",
+  "selector_candidate_pairs": 0,
+  "complete": false,
+  "raw_wrist_margin_deg": 3.7632248566096784e-06,
+  "raw_elbow_tangent_margin_deg": 5.095331930237208e-08,
+  "seed_and_model_retries": {
+   "reference_seed": {
+    "count": 1,
+    "complete": false
+   },
+   "pin_fk_home_seed": {
+    "count": 2,
+    "complete": true
+   },
+   "pin_fk_reference_seed": {
+    "count": 2,
+    "complete": true
+   }
+  },
+  "branch_count": 0,
+  "numerical": {
+   "success": true,
+   "attempts": 1,
+   "q_rad": [
+    1.1258489973306842,
+    0.38518900700549313,
+    0.8610986459539326,
+    0.8095908664625145,
+    -1.5707956788318458,
+    -2.139534479792929
+   ],
+   "mujoco_position_mm": 4.7948265089982804e-05,
+   "mujoco_angle_deg": 3.420542364959909e-05,
+   "independently_in_tolerance": true
+  },
+  "branch_rejection_reasons": {
+   "joint_limits": 2,
+   "outside_planar_reach": 1
+  }
+ }
+}
