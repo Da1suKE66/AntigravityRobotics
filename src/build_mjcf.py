@@ -322,6 +322,7 @@ def build_firefly_mjcf() -> tuple[pathlib.Path, pathlib.Path]:
         joint.armature = dyn["armature"]
         joint.damping = [dyn["damping"], 0.0, 0.0]
         joint.frictionloss = dyn["frictionloss"]
+        joint.solref_limit = [0.004, 1.0]
 
         # URDF specifies grip_joint_2 as a passive mimic of grip_joint_1 (effort=0)
         if not is_mimic_follower:

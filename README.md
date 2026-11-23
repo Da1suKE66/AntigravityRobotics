@@ -13,7 +13,7 @@ Clean MuJoCo 3.x (`MjSpec`) simulation, multi-hull collision modeling, constrain
 - `src/controller.py` — `BumplessGravityController` (`PASSIVE -> ENGAGING -> ACTIVE` bumpless handoff, dynamics-twin gravity feedforward $\tau_g(q_{\text{meas}})$, and anti-windup PID).
 - `src/grasp_pipeline.py` — Closed-loop 10-stage dual-arm tabletop pick-and-place executor, path logger, and MP4 renderer.
 - `src/sim_runner.py` & `src/render_demo.py` — Closed-loop trajectory demo and 720p MP4 renderer (`docs/media/firefly_sim_demo.mp4`).
-- `tests/verify_sim_ik.py`, `tests/audit_sim_ik.py`, `tests/eval_regression_25.py` & `tests/test_grasp_pick_place.py` — Core verification, 9-item audit suite (`9/9`), strict 25-case IK regression (`21/25`), and pick-and-place verification.
+- `tests/verify_sim_ik.py`, `tests/audit_sim_ik.py`, `tests/probe_grasp_execution.py`, `tests/eval_regression_25.py` & `tests/test_grasp_pick_place.py` — Core verification, 9-item audit suite (`9/9`), finger-speed & contact-abort probe, strict 25-case IK regression (`21/25`), and pick-and-place verification.
 - `docs/paths/`, `docs/reports/` & `docs/media/` — Saved planned/executed trajectories, JSON/Markdown evaluation reports (`docs/reports/SIMULATION_IK_GRASP_REPORT.md`), and demo videos.
 - `CHANGELOG.md` — Project changelog, verified metrics, and remaining notes.
 
@@ -24,9 +24,10 @@ Clean MuJoCo 3.x (`MjSpec`) simulation, multi-hull collision modeling, constrain
 /home/lakeside/.venvs/mujoco/bin/python src/build_mjcf.py
 /home/lakeside/.venvs/mujoco/bin/python src/grasp_scene.py
 
-# 2. Run core & directed audit verification suites
+# 2. Run core, audit & grasp-probe verification suites
 /home/lakeside/.venvs/mujoco/bin/python tests/verify_sim_ik.py
 /home/lakeside/.venvs/mujoco/bin/python tests/audit_sim_ik.py
+/home/lakeside/.venvs/mujoco/bin/python tests/probe_grasp_execution.py
 
 # 3. Run strict 25-case IK regression benchmark (writes docs/reports/ik_regression_25_results.json)
 /home/lakeside/.venvs/mujoco/bin/python tests/eval_regression_25.py

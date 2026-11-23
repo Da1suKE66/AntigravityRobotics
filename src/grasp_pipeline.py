@@ -102,6 +102,7 @@ class GraspExecutor:
 
         self._active_allowed_pairs: set[tuple[str, str]] = set()
         self.runtime_forbidden_contacts = 0
+        self.abort_on_forbidden_contact = True
 
         if record_video:
             self.sim_model.vis.global_.offwidth = 1280
@@ -142,9 +143,17 @@ class GraspExecutor:
         self.sim_time += self.dt
         self._step_count += 1
         self.peak_tau = max(self.peak_tau, float(np.max(np.abs(tau))))
-        self.runtime_forbidden_contacts += FireflyDualIK.count_robot_collisions(
+        step_forb = FireflyDualIK.count_robot_collisions(
             self.sim_model, self.data, self._active_allowed_pairs
         )
+        self.runtime_forbidden_contacts += step_forb
+        if self.abort_on_forbidden_contact and step_forb > 0:
+            q_safe = self.data.qpos[: self.dyn_model.nq].copy()
+            self.q_cmd = q_safe
+            self.data.ctrl[: self.dyn_model.nu] = self.ctrl.compute_gravity_ctrl(q_safe)
+            raise RuntimeError(
+                f"Aborted {self._current_label} at t={self.sim_time:.3f}s due to forbidden contact ({step_forb} contacts)"
+            )
 
         if self._step_count % 10 == 0:
             self.exec_trace.append(
@@ -287,23 +296,27 @@ class GraspExecutor:
         label: str,
         side: str,
         q_target: float,
-        ramp_s: float = 0.45,
+        ramp_s: float = 0.65,
         hold_s: float = 0.25,
         allowed_obj: str | None = None,
     ) -> None:
         self._current_label = label
         self._active_allowed_pairs = self._allowed_pairs_for_object(side, allowed_obj)
         g_idx = self._grip_indices(side)
-        g0 = self.q_cmd[g_idx].copy()
+        # Start ramp from actual measured finger angle to avoid spring-back velocity spikes on release
+        g0 = self.data.qpos[g_idx].copy()
         g1 = np.array([q_target, q_target], dtype=float)
-        ramp_steps = max(1, int(round(ramp_s / self.dt)))
+        # Respect URDF 1.5 rad/s gripper velocity limit with margin (1.38 rad/s)
+        min_ramp_s = float(np.max(1.875 * np.abs(g1 - g0) / 1.38))
+        actual_ramp_s = max(float(ramp_s), min_ramp_s, 0.65)
+        ramp_steps = max(1, int(np.ceil(actual_ramp_s / self.dt)))
         for k in range(ramp_steps):
             u = (k + 1) / ramp_steps
             s, ds = quintic_blend(u)
             q_ref = self.q_cmd.copy()
             dq_ref = np.zeros(self.dyn_model.nv)
             q_ref[g_idx] = g0 + s * (g1 - g0)
-            dq_ref[g_idx] = (ds / max(ramp_s, 1e-6)) * (g1 - g0)
+            dq_ref[g_idx] = (ds / actual_ramp_s) * (g1 - g0)
             self._step_control(q_ref, dq_ref)
         self.q_cmd[g_idx] = g1
         hold_steps = max(0, int(round(hold_s / self.dt)))

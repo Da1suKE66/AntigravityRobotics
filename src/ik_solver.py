@@ -459,7 +459,7 @@ class FireflyDualIK:
                     candidates.append((sort_key, q_cand, max_pos, max_ori))
             candidates.sort(key=lambda c: c[0])
 
-            best_score = (1, 1, 1e9, 1e9)
+            best_score = (2, 10**9, 1e12, 1e12)
             for idx_c, (_, q_cand, max_pos, max_ori) in enumerate(candidates):
                 ncon = _check_ncon(q_cand)
                 in_tol = (max_pos <= pos_tol_m) and (max_ori <= ori_tol_rad)

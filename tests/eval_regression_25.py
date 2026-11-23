@@ -62,7 +62,7 @@ def _make_tcp_ik(model: mujoco.MjModel) -> FireflyDualIK:
     return FireflyDualIK(
         model,
         solver="daqp",
-        damping=1e-5,
+        damping=0.045,
         pos_cost=10.0,
         ori_cost=3.0,
         posture_cost=1e-4,

@@ -1,5 +1,23 @@
 # Changelog & Baseline Benchmark Record
 
+## [0.2.2] - 2026-11-23
+
+### Runtime Contact Abort, Gripper Speed Enforcement, Singularity Damping & Diagnostics
+- **`src/grasp_pipeline.py`**:
+  - Enforced URDF `1.5 rad/s` gripper velocity limits in `_set_gripper` by latching measured `data.qpos` (`g0`) and scaling quintic ramp duration ($T \ge 1.875 |\Delta q| / 1.38$, min `0.65 s`), reducing release/close speeds below `1.5 rad/s` (`tests/probe_grasp_execution.py` PASS) and improving pick-place XY accuracy to `0.19 / 0.17 mm`.
+  - Added immediate runtime abort (`abort_on_forbidden_contact=True`) in `_step_control`: on any forbidden contact, commands safe gravity-hold torque and raises `RuntimeError` on the exact contact tick (`0` extra steps after contact).
+- **`src/ik_solver.py` & `src/build_mjcf.py`**:
+  - Fixed `solve_pose_global` fallback scoring initialization (`best_score = (2, 10**9, 1e12, 1e12)`) so failed/colliding candidates report true FK residuals instead of `1e9`.
+  - Set `solref_limit = [0.004, 1.0]` (`2 * dt`) on joints, reducing `H01` limit excursion 13× (`0.000324 -> 0.000025 rad`).
+- **`tests/eval_regression_25.py`**:
+  - Enabled Tikhonov velocity damping (`damping = 0.045`) in `_make_tcp_ik`, eliminating 500 Hz elbow-singularity chattering on `E01` (`451.493 mm -> 5.419 mm`, `ncon = 0`) while keeping `E02–E05` all `< 1.0 mm` (`0.843 / 0.553 / 0.998 / 0.490 mm`).
+- **Verification**:
+  - `tests/audit_sim_ik.py`: **9/9 PASS** (`12.006 s`).
+  - `tests/probe_grasp_execution.py`: **PASS** (exit 0; finger speeds `<= 1.5 rad/s`, abort at step `100 / 100`).
+  - `tests/verify_sim_ik.py`: **3/3 PASS**.
+  - `tests/test_grasp_pick_place.py`: **PASS** (`0.19 / 0.17 mm`, `forbidden_contacts = 0`).
+  - `tests/eval_regression_25.py`: **21/25 PASS** (`E01` down to `5.419 mm`, `H01` `lim_exc = 0.000025 rad`).
+
 ## [0.2.1] - 2026-11-23
 
 ### Audit Remediation: Grasp Safety Gates, Per-Arm Multi-Seed IK, Gripper Mimic & Payload PID

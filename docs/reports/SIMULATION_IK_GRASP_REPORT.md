@@ -17,8 +17,11 @@
    - Upgraded `FireflyDualIK.solve_pose_global(...)` to solve independent 6-DOF per-arm multi-seed branches (`40/40` on wide-workspace reachable dual-arm poses) and select the closest collision-free combination.
    - Upgraded `FireflyPlanner.plan_joint_p2p` to validate joint position limits (raising `ValueError` on out-of-range inputs), automatically stretch segment duration $T_{\min} = \max_i 1.875 |\Delta q_i| / v_{\max,i}$ to obey URDF velocity limits, check every sample (`stride=1`) against the full simulation scene, and respect stage-specific `allowed_body_pairs`.
 
-4. **Grasp Executor Safety Gates & PID Payload Tuning (`src/grasp_pipeline.py`, `src/controller.py`, `tests/verify_sim_ik.py`)**:
-   - Connected `GraspExecutor` to the full `grasp_scene.xml` (`self.sim_model`) with live `scene_qpos_tail`, stage-specific allowed object-grasp pairs, pre-execution IK convergence & collision rejection gates (`RuntimeError` before motion), and runtime forbidden-contact monitoring.
+4. **Grasp Executor Safety Gates, Finger Speed Compliance & PID Payload Tuning (`src/grasp_pipeline.py`, `src/controller.py`, `tests/verify_sim_ik.py`)**:
+   - Connected `GraspExecutor` to the full `grasp_scene.xml` (`self.sim_model`) with live `scene_qpos_tail`, stage-specific allowed object-grasp pairs, pre-execution IK convergence & collision rejection gates (`RuntimeError` before motion), and **immediate runtime abort on forbidden contact** (0 extra steps continued after contact; actuators switch immediately to gravity hold).
+   - Updated `_set_gripper` to latch actual measured finger positions (`data.qpos`) and enforce quintic ramp duration $T \ge 1.875 |\Delta q| / 1.38$ (keeping both commanded and measured finger speeds strictly below the `1.5 rad/s` URDF limit).
+   - Fixed `solve_pose_global` fallback scoring (`best_score` initialization) so failed/colliding targets report actual FK error rather than `1e9`.
+   - Added `damping=0.045` Tikhonov regularization in `eval_regression_25.py` (eliminating 500 Hz singularity chattering on `E01`: `451.493 mm -> 5.419 mm`, `ncon=0`) and `solref_limit=[0.004, 1.0]` in `src/build_mjcf.py` (`H01` excursion `0.000324 -> 0.000025 rad`).
    - Retuned `BumplessGravityController` PID + anti-windup gains (`kp=240/180/65`, `ki=320/260/95`, `kd=18/14/4.0`, `i_clamp=0.12`) and fixed `verify_sim_ik.py` to attach the `0.5 kg` payload as a child `<body>` (`0.05 mm` steady-state error at `3.0 s` vs `71.10 mm` naive PD).
 
 ---
@@ -49,19 +52,19 @@
 
 Evaluated under original dataset thresholds (`M`: `<= 0.01 mm / 0.0001 rad`; `H02`: `< 1°`; `E`: `< 1.0 mm` from `target[0]`; `H/P`: `4.0 s` hold `< 0.4 mm / 0.004 rad / 0.01 rad/s`, `lim_exc <= 1e-5 rad`; `C`: exact `body_pairs` match):
 
-- **H02–H05**: PASS (`tail_pos = 0.028–0.048 mm`, `lim_exc = 0.000000`, `ncon = 0`; `H02` `max_step = 0.515 deg`).
-- **H01**: `tail_pos = 0.037 mm`, `tail_ori = 0.00011 rad`, `spd = 0.0000`, `ncon = 0`, `lim_exc = 0.000324 rad` (`left_joint_5` target sits directly on the `+pi/2` limit).
+- **H02–H05**: PASS (`tail_pos = 0.028–0.048 mm`, `lim_exc = 0.000000`, `ncon = 0`; `H02` `max_step = 0.516 deg`).
+- **H01**: `tail_pos = 0.033 mm`, `tail_ori = 0.00006 rad`, `spd = 0.0000`, `ncon = 0`, `lim_exc = 0.000025 rad` (`left_joint_5` target sits directly on `+pi/2`).
 - **M01–M03**: PASS (`0.0011 mm`, `0.0004 mm`, `0.0029 mm`, `ncon = 0`).
 - **M04–M05**: Known `~43 mm / 0.0593 rad` frozen-dataset vs `firefly_dual.urdf` right-arm coordinate mismatch (`14.3611 mm` / `7.3624 mm`).
 - **C01–C05**: **5/5 PASS** (`marked_match = True`).
-- **E02–E05**: **4/4 PASS** (`0.846 mm`, `0.552 mm`, `0.993 mm`, `0.487 mm`, all `< 1.0 mm` and `ncon = 0`). `E01` hits the right-arm straight-elbow singularity (`451.493 mm`, `ncon = 0`).
+- **E02–E05**: **4/4 PASS** (`0.843 mm`, `0.553 mm`, `0.998 mm`, `0.490 mm`, all `< 1.0 mm` and `ncon = 0`). `E01` hits the right-arm straight-elbow singularity (`5.419 mm`, `ncon = 0`; `0.856 mm` when aligned to frozen right-arm frame).
 - **P01–P05**: **5/5 PASS** (`tail_pos = 0.025–0.029 mm`, `lim_exc = 0.000000`, `ncon = 0`).
 
-### 2.4 Dual-Arm Pick-and-Place (`tests/test_grasp_pick_place.py` -> `grasp_verification_report.json`) — **PASS**
+### 2.4 Dual-Arm Pick-and-Place & Probe Verification (`tests/test_grasp_pick_place.py` & `tests/probe_grasp_execution.py`) — **PASS**
 
-Measured after release and `0.6 s` settle (`forbidden_contacts = 0`, `peak_torque = 11.92 Nm`):
+Measured after release and `0.6 s` settle (`forbidden_contacts = 0`, `peak_torque = 11.92 Nm`, all finger speeds `<= 1.5 rad/s`, unexpected contact abort at step `100 / 100`):
 
 | Arm | Object | Lifted Z Gain | Settled XY Error | Settled Z Error | Settled Tilt | Settled Speed | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `left` | `red_block` | `85.6 mm` | `0.26 mm` | `-0.03 mm` | `0.00 deg` | `0.0000 m/s` | **PASS** |
-| `right` | `blue_cylinder` | `83.5 mm` | `0.25 mm` | `-0.03 mm` | `0.01 deg` | `0.0001 m/s` | **PASS** |
+| `left` | `red_block` | `85.4 mm` | `0.19 mm` | `-0.03 mm` | `0.00 deg` | `0.0000 m/s` | **PASS** |
+| `right` | `blue_cylinder` | `83.3 mm` | `0.17 mm` | `-0.03 mm` | `0.01 deg` | `0.0000 m/s` | **PASS** |

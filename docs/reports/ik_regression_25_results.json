@@ -7,12 +7,12 @@
       "kind": "point_to_point",
       "passed": false,
       "mode": "synchronous",
-      "tail_pos_mm": 0.037,
-      "tail_ori_rad": 0.00011,
+      "tail_pos_mm": 0.033,
+      "tail_ori_rad": 6e-05,
       "tail_spd_rad_s": 5e-05,
-      "limit_exc_rad": 0.000324,
+      "limit_exc_rad": 2.5e-05,
       "ncon": 0,
-      "summary": "mode=synchronous tail_pos=0.037mm tail_ori=0.00011rad spd=0.0000 lim_exc=0.000324 ncon=0"
+      "summary": "mode=synchronous tail_pos=0.033mm tail_ori=0.00006rad spd=0.0000 lim_exc=0.000025 ncon=0"
     },
     {
       "id": "H02",
@@ -20,8 +20,8 @@
       "passed": true,
       "max_pos_mm": 0.0,
       "max_ori_rad": 0.0,
-      "max_step_deg": 0.515,
-      "summary": "max_pos=0.000mm max_ori=0.00000rad max_step=0.515deg"
+      "max_step_deg": 0.516,
+      "summary": "max_pos=0.000mm max_ori=0.00000rad max_step=0.516deg"
     },
     {
       "id": "H03",
@@ -153,41 +153,41 @@
       "id": "E01",
       "kind": "cartesian_path",
       "passed": false,
-      "moving_peak_mm": 451.493,
+      "moving_peak_mm": 5.419,
       "ncon": 0,
-      "summary": "moving_peak=451.493mm ncon=0"
+      "summary": "moving_peak=5.419mm ncon=0"
     },
     {
       "id": "E02",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.846,
+      "moving_peak_mm": 0.843,
       "ncon": 0,
-      "summary": "moving_peak=0.846mm ncon=0"
+      "summary": "moving_peak=0.843mm ncon=0"
     },
     {
       "id": "E03",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.552,
+      "moving_peak_mm": 0.553,
       "ncon": 0,
-      "summary": "moving_peak=0.552mm ncon=0"
+      "summary": "moving_peak=0.553mm ncon=0"
     },
     {
       "id": "E04",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.993,
+      "moving_peak_mm": 0.998,
       "ncon": 0,
-      "summary": "moving_peak=0.993mm ncon=0"
+      "summary": "moving_peak=0.998mm ncon=0"
     },
     {
       "id": "E05",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.487,
+      "moving_peak_mm": 0.49,
       "ncon": 0,
-      "summary": "moving_peak=0.487mm ncon=0"
+      "summary": "moving_peak=0.490mm ncon=0"
     },
     {
       "id": "P01",
