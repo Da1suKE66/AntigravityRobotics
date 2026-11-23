@@ -1,5 +1,23 @@
 # Changelog & Baseline Benchmark Record
 
+## [0.2.0] - 2026-11-23
+
+### Collision Remediation, Global Multi-Seed IK & Dual-Arm Pick-and-Place
+- **`src/build_mjcf.py` & `assets/meshes/collision/`**:
+  - Decomposed `link_3`, `link_4`, `link_5`, `gr100_link_1`, and `gr100_link_2` into `<= 60`-vertex multi-convex hulls, eliminating `C01–C03` false `link_3`–`link_5` overlaps.
+  - Added `group="3"` collision primitives for the workcell housing, vertical post (`post_profile`), overhead D435 mount, and wrist D405 camera brackets (enabling real collision detection on `C04` and `C05`).
+  - Calibrated gripper motor limits (`5.0 Nm`) and high-friction finger pad contacts (`condim="4"`, `friction="1.2 0.05 0.005"`).
+- **`src/ik_solver.py` & `src/planner.py`**:
+  - Added `mink.DofFreezingTask` to decouple gripper DOFs from arm IK, configurable `site_suffix` (`ee_site` / `tcp_site`), and `solve_pose_global()` multi-branch warm-start (solving `H01` wrist-pole jump to `0.14 mm`).
+  - Added `FireflyPlanner` (`plan_joint_p2p`, `plan_pose_p2p`) with collision checking across `synchronous`, `left_first`, `right_first`, and `home_via` modes plus JSON/CSV trajectory export (`docs/paths/`).
+- **`src/grasp_scene.py`, `src/grasp_pipeline.py` & `tests/test_grasp_pick_place.py`**:
+  - Built `model/grasp_scene.xml` with `red_block` (`44 mm`, `85 g`), `blue_cylinder` (`r=21 mm, h=60 mm`, `95 g`), and target placement pads.
+  - Implemented 10-stage closed-loop pick-and-place achieving `0.26 mm` (left `red_block`) and `0.87 mm` (right `blue_cylinder`) post-settle placement accuracy (`tilt <= 0.01 deg`).
+- **Verification & Reports (`docs/reports/SIMULATION_IK_GRASP_REPORT.md`)**:
+  - `tests/verify_sim_ik.py`: 3/3 PASS.
+  - `tests/eval_regression_25.py`: **22/25 PASS** (`H01–H05`, `M01–M03`, `C01–C05`, `E02–E05`, `P01–P05`). Remaining 3 (`M04`, `M05`, `E01`) stem from a documented `~43 mm / 0.059 rad` frozen-dataset right-arm calibration offset and `E01`'s known upward-circle elbow singularity.
+  - `tests/test_grasp_pick_place.py`: PASS (`docs/media/firefly_grasp_demo.mp4` & `docs/media/firefly_grasp_keyframes.png`).
+
 ## [0.1.0] - 2026-11-21
 
 ### Architecture & Implementation (Built from Scratch from `firefly_dual.urdf`)
