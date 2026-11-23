@@ -149,8 +149,10 @@ class GraspExecutor:
         self.runtime_forbidden_contacts += step_forb
         if self.abort_on_forbidden_contact and step_forb > 0:
             q_safe = self.data.qpos[: self.dyn_model.nq].copy()
+            dq_safe = self.data.qvel[: self.dyn_model.nv].copy()
             self.q_cmd = q_safe
-            self.data.ctrl[: self.dyn_model.nu] = self.ctrl.compute_gravity_ctrl(q_safe)
+            self.ctrl.enter_safe_hold(q_safe)
+            self.data.ctrl[: self.dyn_model.nu] = self.ctrl.compute_brake_ctrl(q_safe, dq_safe)
             raise RuntimeError(
                 f"Aborted {self._current_label} at t={self.sim_time:.3f}s due to forbidden contact ({step_forb} contacts)"
             )
@@ -329,6 +331,21 @@ class GraspExecutor:
                 "grip_meas_rad": [round(float(self.data.qpos[i]), 4) for i in g_idx],
             }
         )
+
+    def step_safe_hold(self) -> np.ndarray:
+        """Advance one simulation step under active damped SAFE_HOLD braking."""
+        q_meas = self.data.qpos[: self.dyn_model.nq].copy()
+        dq_meas = self.data.qvel[: self.dyn_model.nv].copy()
+        tau = self.ctrl.step(self.dt, q_meas, dq_meas, self.q_cmd)
+        self.data.ctrl[: self.dyn_model.nu] = tau
+        mujoco.mj_step(self.sim_model, self.data)
+        self.sim_time += self.dt
+        return tau
+
+    def hold_safe(self, duration: float) -> None:
+        """Hold current latched pose under active damped SAFE_HOLD for duration seconds."""
+        for _ in range(int(round(duration / self.dt))):
+            self.step_safe_hold()
 
     def _hold(self, label: str, duration: float) -> None:
         self._current_label = label

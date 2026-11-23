@@ -268,6 +268,7 @@ class FireflyPlanner:
         dt: float = 0.002,
         scene_qpos_tail: np.ndarray | None = None,
         allowed_body_pairs: set[tuple[str, str]] | None = None,
+        limit_margin_rad: float = 6e-4,
     ) -> tuple[PlannedTrajectory, dict[str, float | int | bool]]:
         """Solve global IK for target SE(3) pose(s) and plan a collision-free joint trajectory."""
         q_goal, ik_info = self.ik.solve_pose_global(
@@ -278,6 +279,18 @@ class FireflyPlanner:
             scene_qpos_tail=scene_qpos_tail,
             allowed_body_pairs=allowed_body_pairs,
         )
+        # Apply soft joint-limit buffer for dynamic P2P execution so servo tracking never strikes hard stops
+        if ik_info.get("converged", False) and limit_margin_rad > 0.0:
+            arm_dofs = set(self.ik.left_arm_dofs + self.ik.right_arm_dofs)
+            for jid in range(self.ik.model.njnt):
+                if not self.ik.model.jnt_limited[jid]:
+                    continue
+                adr = int(self.ik.model.jnt_qposadr[jid])
+                if adr not in arm_dofs:
+                    continue
+                lo, hi = self.ik.model.jnt_range[jid]
+                if hi - lo > 2.0 * limit_margin_rad:
+                    q_goal[adr] = float(np.clip(q_goal[adr], lo + limit_margin_rad, hi - limit_margin_rad))
         traj = self.plan_joint_p2p(
             q_start,
             q_goal,

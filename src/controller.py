@@ -1,4 +1,4 @@
-"""Bumpless Transfer + Gravity-Compensated Joint Controller (G + PID + Anti-Windup)."""
+"""Bumpless Transfer + Gravity/Coriolis-Compensated Joint Controller (G+C + PID + Anti-Windup + Safe Hold)."""
 
 from __future__ import annotations
 
@@ -13,9 +13,10 @@ from src.ik_solver import quintic_blend
 class ControlMode(Enum):
     """Controller authority state machine."""
 
-    PASSIVE = auto()   # External / idle / zero-torque or hold
-    ENGAGING = auto()  # Bumpless handoff ramp window
-    ACTIVE = auto()    # Full closed-loop G + PID + AW tracking
+    PASSIVE = auto()    # External / idle / zero-torque or hold
+    ENGAGING = auto()   # Bumpless handoff ramp window
+    ACTIVE = auto()     # Full closed-loop G+C + PID + AW tracking
+    SAFE_HOLD = auto()  # Active damped position-latch braking hold (post-abort E-stop)
 
 
 @dataclass
@@ -27,7 +28,7 @@ class ControllerGains:
     ki: np.ndarray
     tau_limit: np.ndarray
     i_clamp: np.ndarray
-    anti_windup_kb: float = 2.0
+    anti_windup_kb: float = 5.0  # Back-calculation tracking rate 1/T_t (1/s)
 
     @classmethod
     def default_for_model(cls, model: mujoco.MjModel) -> "ControllerGains":
@@ -74,8 +75,9 @@ class ControllerGains:
 
 
 class BumplessGravityController:
-    """Joint-space torque controller with exact model-based gravity compensation,
-    back-calculation anti-windup PID, and C^2 bumpless control-authority transfer.
+    """Joint-space torque controller with model-based gravity/Coriolis compensation,
+    unit-consistent back-calculation anti-windup PID, C^2 bumpless transfer,
+    and active damped SAFE_HOLD braking.
     """
 
     def __init__(
@@ -85,7 +87,7 @@ class BumplessGravityController:
         engage_duration: float = 0.30,
     ) -> None:
         self.model = model
-        # Dedicated dynamics twin (only uses q_meas, never sim internals -> real-robot ready)
+        # Dedicated dynamics twin (only uses encoder q_meas/dq_meas -> real-robot ready)
         self._dyn_data = mujoco.MjData(model)
         self.gains = gains or ControllerGains.default_for_model(model)
         self.engage_duration = float(engage_duration)
@@ -111,9 +113,29 @@ class BumplessGravityController:
         mujoco.mj_forward(self.model, self._dyn_data)
         return self._dyn_data.qfrc_bias.copy()
 
+    def compute_bias_torque(self, q_meas: np.ndarray, dq_meas: np.ndarray) -> np.ndarray:
+        """Compute gravity + Coriolis/centrifugal bias torque C(q, dq)dq + g(q), shape (nv,)."""
+        self._dyn_data.qpos[:] = q_meas
+        self._dyn_data.qvel[:] = dq_meas
+        self._dyn_data.qacc[:] = 0.0
+        mujoco.mj_forward(self.model, self._dyn_data)
+        return self._dyn_data.qfrc_bias.copy()
+
     def compute_gravity_ctrl(self, q_meas: np.ndarray) -> np.ndarray:
-        """Compute gravity feedforward actuator vector matching model.nu."""
+        """Compute static gravity feedforward actuator vector matching model.nu."""
         return self.compute_gravity_torque(q_meas)[self.act_dofs].copy()
+
+    def compute_brake_ctrl(self, q_meas: np.ndarray, dq_meas: np.ndarray) -> np.ndarray:
+        """Compute immediate damped braking torque g(q) - kd * dq for safe stop."""
+        tau_g = self.compute_gravity_torque(q_meas)
+        tau_brake = np.clip(tau_g - self.gains.kd * dq_meas, -self.gains.tau_limit, self.gains.tau_limit)
+        return tau_brake[self.act_dofs].copy()
+
+    def enter_safe_hold(self, q_meas: np.ndarray) -> None:
+        """Switch immediately to active damped SAFE_HOLD latched at q_meas."""
+        self._q_latch = q_meas.copy()
+        self._e_int[:] = 0.0
+        self.mode = ControlMode.SAFE_HOLD
 
     def engage(
         self,
@@ -166,6 +188,15 @@ class BumplessGravityController:
             self._last_tau[:] = 0.0
             return self._last_tau.copy()
 
+        if self.mode == ControlMode.SAFE_HOLD:
+            pos_err = self._q_latch - q_meas
+            vel_err = -dq_meas
+            tau_g = self.compute_gravity_torque(q_meas)
+            tau_unsat = tau_g + self.gains.kp * pos_err + self.gains.kd * vel_err
+            tau_sat = np.clip(tau_unsat, -self.gains.tau_limit, self.gains.tau_limit)
+            self._last_tau = tau_sat[self.act_dofs].copy()
+            return self._last_tau.copy()
+
         if dq_ref is None:
             dq_ref = np.zeros(self.model.nv)
 
@@ -186,11 +217,13 @@ class BumplessGravityController:
         pos_err = q_target - q_meas
         vel_err = dq_target - dq_meas
 
-        tau_g = self.compute_gravity_torque(q_meas)
+        tau_bias = self.compute_bias_torque(q_meas, dq_meas)
+        tau_damp_ff = self.model.dof_damping * dq_target
 
-        # Unsaturated G + PID torque
+        # Unsaturated G+C + viscous FF + PID torque
         tau_unsat = (
-            tau_g
+            tau_bias
+            + tau_damp_ff
             + self.gains.kp * pos_err
             + self.gains.kd * vel_err
             + self.gains.ki * self._e_int
@@ -202,9 +235,11 @@ class BumplessGravityController:
 
         tau_sat = np.clip(tau_unsat, -self.gains.tau_limit, self.gains.tau_limit)
 
-        # Back-calculation anti-windup on integrator
+        # Unit-consistent back-calculation anti-windup: de_int/dt = e + (kb/ki) * (tau_sat - tau_unsat)
         sat_diff = tau_sat - tau_unsat
-        self._e_int += (pos_err + self.gains.anti_windup_kb * sat_diff) * dt
+        safe_ki = np.where(self.gains.ki > 1e-6, self.gains.ki, 1.0)
+        aw_term = np.where(self.gains.ki > 1e-6, (self.gains.anti_windup_kb / safe_ki) * sat_diff, 0.0)
+        self._e_int += (pos_err + aw_term) * dt
         self._e_int = np.clip(self._e_int, -self.gains.i_clamp, self.gains.i_clamp)
 
         self._last_tau = tau_sat[self.act_dofs].copy()

@@ -1,6 +1,6 @@
 {
   "total_sim_time_s": 22.16,
-  "peak_torque_nm": 11.924,
+  "peak_torque_nm": 11.893,
   "forbidden_contacts": 0,
   "all_passed": true,
   "tasks": [
@@ -16,10 +16,10 @@
         0.41,
         0.07
       ],
-      "lifted_z_gain_mm": 85.42,
+      "lifted_z_gain_mm": 85.2,
       "settled_xyz_m": [
-        0.41012,
-        0.07015,
+        0.41002,
+        0.07019,
         0.10397
       ],
       "place_xy_err_mm": 0.19,
@@ -34,24 +34,24 @@
       "object": "blue_cylinder",
       "start_xyz_m": [
         0.4,
-        -0.22,
+        -0.22001,
         0.10997
       ],
       "target_place_xy_m": [
         0.41,
         -0.07
       ],
-      "lifted_z_gain_mm": 83.35,
+      "lifted_z_gain_mm": 83.14,
       "settled_xyz_m": [
-        0.41013,
-        -0.0701,
+        0.41006,
+        -0.07013,
         0.11197
       ],
-      "place_xy_err_mm": 0.17,
+      "place_xy_err_mm": 0.15,
       "place_z_err_mm": -0.03,
       "settled_tilt_deg": 0.01,
-      "settled_lin_speed_m_s": 3e-05,
-      "settled_ang_speed_rad_s": 0.00102,
+      "settled_lin_speed_m_s": 7e-05,
+      "settled_ang_speed_rad_s": 0.00221,
       "passed": true
     }
   ],
@@ -61,20 +61,20 @@
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
         0.0205,
-        0.0206
+        0.0205
       ]
     },
     {
       "stage": "left:pre_grasp",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 0.81,
+      "exec_pos_err_mm": 0.224,
       "collision_free": true,
       "forbidden_contacts": 0
     },
     {
       "stage": "left:descend_grasp",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 0.977,
+      "exec_pos_err_mm": 0.784,
       "collision_free": true,
       "forbidden_contacts": 0
     },
@@ -89,21 +89,21 @@
     {
       "stage": "left:lift",
       "ik_pos_err_mm": 0.0002,
-      "exec_pos_err_mm": 0.818,
+      "exec_pos_err_mm": 0.686,
       "collision_free": true,
       "forbidden_contacts": 0
     },
     {
       "stage": "left:transport",
       "ik_pos_err_mm": 0.0,
-      "exec_pos_err_mm": 0.514,
+      "exec_pos_err_mm": 0.266,
       "collision_free": true,
       "forbidden_contacts": 0
     },
     {
       "stage": "left:lower_place",
       "ik_pos_err_mm": 0.0029,
-      "exec_pos_err_mm": 0.741,
+      "exec_pos_err_mm": 0.672,
       "collision_free": true,
       "forbidden_contacts": 0
     },
@@ -111,14 +111,14 @@
       "stage": "left:release",
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
-        0.0535,
-        0.0536
+        0.0613,
+        0.0614
       ]
     },
     {
       "stage": "left:retract",
       "ik_pos_err_mm": 0.0006,
-      "exec_pos_err_mm": 1.579,
+      "exec_pos_err_mm": 1.495,
       "collision_free": true,
       "forbidden_contacts": 0
     },
@@ -132,20 +132,20 @@
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
         0.0206,
-        0.0207
+        0.0206
       ]
     },
     {
       "stage": "right:pre_grasp",
       "ik_pos_err_mm": 0.0,
-      "exec_pos_err_mm": 0.802,
+      "exec_pos_err_mm": 0.217,
       "collision_free": true,
       "forbidden_contacts": 0
     },
     {
       "stage": "right:descend_grasp",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 0.943,
+      "exec_pos_err_mm": 0.757,
       "collision_free": true,
       "forbidden_contacts": 0
     },
@@ -160,21 +160,21 @@
     {
       "stage": "right:lift",
       "ik_pos_err_mm": 0.0002,
-      "exec_pos_err_mm": 0.768,
+      "exec_pos_err_mm": 0.636,
       "collision_free": true,
       "forbidden_contacts": 0
     },
     {
       "stage": "right:transport",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 0.523,
+      "exec_pos_err_mm": 0.277,
       "collision_free": true,
       "forbidden_contacts": 0
     },
     {
       "stage": "right:lower_place",
       "ik_pos_err_mm": 0.0042,
-      "exec_pos_err_mm": 0.574,
+      "exec_pos_err_mm": 0.507,
       "collision_free": true,
       "forbidden_contacts": 0
     },
@@ -182,14 +182,14 @@
       "stage": "right:release",
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
-        0.0625,
-        0.0625
+        0.0697,
+        0.0697
       ]
     },
     {
       "stage": "right:retract",
       "ik_pos_err_mm": 0.0007,
-      "exec_pos_err_mm": 1.591,
+      "exec_pos_err_mm": 1.505,
       "collision_free": true,
       "forbidden_contacts": 0
     },

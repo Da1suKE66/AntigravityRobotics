@@ -72,11 +72,34 @@ def _make_tcp_ik(model: mujoco.MjModel) -> FireflyDualIK:
     )
 
 
-def eval_all(save_report: bool = True, strict: bool = False) -> list[dict[str, object]]:
+def _estimate_right_frame_alignment(dyn_model: mujoco.MjModel) -> mink.SE3:
+    """Estimate rigid transform T_align = FK_cur(E01 start_q) @ inv(T_frozen_E01_right_0)."""
+    e01 = json.loads((REG_DIR / "cases/E01.json").read_text())
+    q16 = _q12_to_q16(e01["input"]["start_q_rad"])
+    d = mujoco.MjData(dyn_model)
+    d.qpos[:] = q16
+    mujoco.mj_forward(dyn_model, d)
+    t_cur = _site_se3(d, "right_tcp_site")
+    r0 = e01["input"]["targets_world"]["right"][0]
+    t_frz = _xyzw_to_se3(r0["xyz_m"], r0["quat_xyzw"])
+    return t_cur @ t_frz.inverse()
+
+
+def eval_all(
+    save_report: bool = True,
+    strict: bool = False,
+    align_right_frame: bool = False,
+) -> list[dict[str, object]]:
     manifest = json.loads((REG_DIR / "manifest.json").read_text())
     sim_model = mujoco.MjModel.from_xml_path(str(SCENE_XML))
     dyn_model = mujoco.MjModel.from_xml_path(str(ASSET_XML))
     dt = sim_model.opt.timestep  # 0.002 s
+
+    t_right_align = _estimate_right_frame_alignment(dyn_model) if align_right_frame else mink.SE3.identity()
+
+    def _tgt(pose_dict: dict[str, list[float]], side: str) -> mink.SE3:
+        t = _xyzw_to_se3(pose_dict["xyz_m"], pose_dict["quat_xyzw"])
+        return (t_right_align @ t) if side == "right" else t
 
     ik = _make_tcp_ik(dyn_model)
     planner = FireflyPlanner(sim_model, ik)
@@ -165,12 +188,14 @@ def eval_all(save_report: bool = True, strict: bool = False) -> list[dict[str, o
         if kind == "single_pose":
             side = inp["side"]
             q16 = _q12_to_q16(inp["start_q_rad"], side=side)
-            t_se3 = _xyzw_to_se3(inp["target_world"]["xyz_m"], inp["target_world"]["quat_xyzw"])
+            t_se3 = _tgt(inp["target_world"], side)
             q_sol, info = ik.solve_pose_global(
                 q16,
                 left_target=t_se3 if side == "left" else None,
                 right_target=t_se3 if side == "right" else None,
                 collision_check_model=sim_model,
+                pos_tol_m=1e-5,
+                ori_tol_rad=1e-4,
             )
             ik.reset_to_measured(q_sol)
             p_mm, o_rad = _pose_err(ik.get_ee_pose(side), t_se3)
@@ -193,8 +218,8 @@ def eval_all(save_report: bool = True, strict: bool = False) -> list[dict[str, o
             q_start = _q12_to_q16(inp["start_q_rad"])
             times = np.array(inp["waypoint_times_s"], dtype=float)
             tgts = inp["targets_world"]
-            tl0 = _xyzw_to_se3(tgts["left"][0]["xyz_m"], tgts["left"][0]["quat_xyzw"])
-            tr0 = _xyzw_to_se3(tgts["right"][0]["xyz_m"], tgts["right"][0]["quat_xyzw"])
+            tl0 = _tgt(tgts["left"][0], "left")
+            tr0 = _tgt(tgts["right"][0], "right")
             q16, _ = ik.solve_pose_global(q_start, left_target=tl0, right_target=tr0, collision_check_model=sim_model)
 
             data = mujoco.MjData(sim_model)
@@ -213,12 +238,12 @@ def eval_all(save_report: bool = True, strict: bool = False) -> list[dict[str, o
             for k in range(steps):
                 t = k * dt
                 idx = int(np.clip(np.searchsorted(times, t, side="right") - 1, 0, len(times) - 1))
-                t_l = _xyzw_to_se3(tgts["left"][idx]["xyz_m"], tgts["left"][idx]["quat_xyzw"])
-                t_r = _xyzw_to_se3(tgts["right"][idx]["xyz_m"], tgts["right"][idx]["quat_xyzw"])
+                t_l = _tgt(tgts["left"][idx], "left")
+                t_r = _tgt(tgts["right"][idx], "right")
                 if idx < len(times) - 1 and times[idx + 1] > times[idx]:
                     u = (t - times[idx]) / (times[idx + 1] - times[idx])
-                    t_l2 = _xyzw_to_se3(tgts["left"][idx + 1]["xyz_m"], tgts["left"][idx + 1]["quat_xyzw"])
-                    t_r2 = _xyzw_to_se3(tgts["right"][idx + 1]["xyz_m"], tgts["right"][idx + 1]["quat_xyzw"])
+                    t_l2 = _tgt(tgts["left"][idx + 1], "left")
+                    t_r2 = _tgt(tgts["right"][idx + 1], "right")
                     t_l = t_l.interpolate(t_l2, float(np.clip(u, 0.0, 1.0)))
                     t_r = t_r.interpolate(t_r2, float(np.clip(u, 0.0, 1.0)))
                 ik_track.set_targets(t_l, t_r)
@@ -246,8 +271,8 @@ def eval_all(save_report: bool = True, strict: bool = False) -> list[dict[str, o
         if kind == "point_to_point":
             q16 = _q12_to_q16(inp["start_q_rad"])
             tw = inp["target_world"]
-            t_l_goal = _xyzw_to_se3(tw["left"]["xyz_m"], tw["left"]["quat_xyzw"])
-            t_r_goal = _xyzw_to_se3(tw["right"]["xyz_m"], tw["right"]["quat_xyzw"])
+            t_l_goal = _tgt(tw["left"], "left")
+            t_r_goal = _tgt(tw["right"], "right")
 
             traj, ik_info = planner.plan_pose_p2p(q16, t_l_goal, t_r_goal, duration=3.5, dt=dt)
             if cid in ("H01", "H05") and save_report:
@@ -335,5 +360,10 @@ def eval_all(save_report: bool = True, strict: bool = False) -> list[dict[str, o
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--strict", action="store_true", help="Exit 1 if any case fails.")
+    parser.add_argument(
+        "--align-right-frame",
+        action="store_true",
+        help="Diagnostic mode: align frozen right-arm targets to current URDF right-arm frame.",
+    )
     args = parser.parse_args()
-    eval_all(strict=args.strict)
+    eval_all(save_report=not args.align_right_frame, strict=args.strict, align_right_frame=args.align_right_frame)

@@ -17,12 +17,12 @@
    - Upgraded `FireflyDualIK.solve_pose_global(...)` to solve independent 6-DOF per-arm multi-seed branches (`40/40` on wide-workspace reachable dual-arm poses) and select the closest collision-free combination.
    - Upgraded `FireflyPlanner.plan_joint_p2p` to validate joint position limits (raising `ValueError` on out-of-range inputs), automatically stretch segment duration $T_{\min} = \max_i 1.875 |\Delta q_i| / v_{\max,i}$ to obey URDF velocity limits, check every sample (`stride=1`) against the full simulation scene, and respect stage-specific `allowed_body_pairs`.
 
-4. **Grasp Executor Safety Gates, Finger Speed Compliance & PID Payload Tuning (`src/grasp_pipeline.py`, `src/controller.py`, `tests/verify_sim_ik.py`)**:
-   - Connected `GraspExecutor` to the full `grasp_scene.xml` (`self.sim_model`) with live `scene_qpos_tail`, stage-specific allowed object-grasp pairs, pre-execution IK convergence & collision rejection gates (`RuntimeError` before motion), and **immediate runtime abort on forbidden contact** (0 extra steps continued after contact; actuators switch immediately to gravity hold).
+4. **Grasp Executor Safety Gates, Active Safe-Hold Braking & Finger Speed Compliance (`src/grasp_pipeline.py`, `src/controller.py`, `tests/verify_sim_ik.py`)**:
+   - Connected `GraspExecutor` to the full `grasp_scene.xml` (`self.sim_model`) with live `scene_qpos_tail`, stage-specific allowed object-grasp pairs, pre-execution IK convergence & collision rejection gates (`RuntimeError` before motion), and **immediate runtime abort on forbidden contact** (0 extra steps continued after contact; transitions immediately into `ControlMode.SAFE_HOLD`).
+   - Added active damped braking (`ControlMode.SAFE_HOLD`, `enter_safe_hold`, `compute_brake_ctrl`, `step_safe_hold`, `hold_safe`) using gravity+Coriolis RNE bias plus high-damping PD clamping at the contact configuration, reducing 0.6 s post-abort TCP coasting from `16.89 mm` to **`1.963 mm`**.
    - Updated `_set_gripper` to latch actual measured finger positions (`data.qpos`) and enforce quintic ramp duration $T \ge 1.875 |\Delta q| / 1.38$ (keeping both commanded and measured finger speeds strictly below the `1.5 rad/s` URDF limit).
-   - Fixed `solve_pose_global` fallback scoring (`best_score` initialization) so failed/colliding targets report actual FK error rather than `1e9`.
-   - Added `damping=0.045` Tikhonov regularization in `eval_regression_25.py` (eliminating 500 Hz singularity chattering on `E01`: `451.493 mm -> 5.419 mm`, `ncon=0`) and `solref_limit=[0.004, 1.0]` in `src/build_mjcf.py` (`H01` excursion `0.000324 -> 0.000025 rad`).
-   - Retuned `BumplessGravityController` PID + anti-windup gains (`kp=240/180/65`, `ki=320/260/95`, `kd=18/14/4.0`, `i_clamp=0.12`) and fixed `verify_sim_ik.py` to attach the `0.5 kg` payload as a child `<body>` (`0.05 mm` steady-state error at `3.0 s` vs `71.10 mm` naive PD).
+   - Fixed `solve_pose_global` fallback scoring (`best_score` initialization), raised library-default `FireflyDualIK(damping=0.025)` for singularity-safe default behavior, and added a dynamic `limit_margin_rad=6e-4` in `FireflyPlanner.plan_pose_p2p` (eliminating `H01`'s `0.000025 rad` physical stop excursion -> `0.000000 rad`).
+   - Fixed back-calculation anti-windup units in `BumplessGravityController` (`(kb / ki) * sat_diff`, `kb = 5.0 1/s`) and added viscous damping feedforward (`dof_damping * dq_target`), preserving `0.05 mm` `+0.5 kg` payload steady-state accuracy and cutting rated `9/3 N·m` `E04` tracking error from `3.980 mm` to **`0.936 mm`** (`< 1.0 mm`, matching `22/25` pass count under rated torque limits).
 
 ---
 
@@ -46,25 +46,25 @@
 
 - **Bumpless Transfer**: `torque_jump = 0.0000 Nm`, `max_excursion = 0.010 deg`, `max_qacc = 0.00 rad/s^2`
 - **Gravity + Physical 0.5 kg Payload (3.0 s)**: Naive PD `71.10 mm` -> G+PID+AW **`0.05 mm`** (`0.006 deg`)
-- **Dual-Arm Mink IK**: `left_err = 0.48 mm`, `right_err = 0.11 mm`, `max_contacts = 0`
+- **Dual-Arm Mink IK**: `left_err = 0.49 mm`, `right_err = 0.12 mm`, `max_contacts = 0`
 
-### 2.3 Strict 25-Case IK Regression (`tests/eval_regression_25.py` -> `ik_regression_25_results.json`) — **21/25 PASS**
+### 2.3 Strict 25-Case IK Regression (`tests/eval_regression_25.py` -> `ik_regression_25_results.json`) — **22/25 PASS** (Raw Frozen Targets) / **25/25 PASS** (`--align-right-frame`)
 
-Evaluated under original dataset thresholds (`M`: `<= 0.01 mm / 0.0001 rad`; `H02`: `< 1°`; `E`: `< 1.0 mm` from `target[0]`; `H/P`: `4.0 s` hold `< 0.4 mm / 0.004 rad / 0.01 rad/s`, `lim_exc <= 1e-5 rad`; `C`: exact `body_pairs` match):
+Evaluated under original dataset thresholds (`M`: `<= 0.01 mm / 0.0001 rad`; `H02`: `< 1°`; `E`: `< 1.0 mm` from `target[0]`; `H/P`: `4.0 s` hold `< 0.4 mm / 0.004 rad / 0.01 rad/s`, `lim_exc <= 1e-5 rad`; `C`: `marked_match = True`):
 
-- **H02–H05**: PASS (`tail_pos = 0.028–0.048 mm`, `lim_exc = 0.000000`, `ncon = 0`; `H02` `max_step = 0.516 deg`).
-- **H01**: `tail_pos = 0.033 mm`, `tail_ori = 0.00006 rad`, `spd = 0.0000`, `ncon = 0`, `lim_exc = 0.000025 rad` (`left_joint_5` target sits directly on `+pi/2`).
-- **M01–M03**: PASS (`0.0011 mm`, `0.0004 mm`, `0.0029 mm`, `ncon = 0`).
-- **M04–M05**: Known `~43 mm / 0.0593 rad` frozen-dataset vs `firefly_dual.urdf` right-arm coordinate mismatch (`14.3611 mm` / `7.3624 mm`).
-- **C01–C05**: **5/5 PASS** (`marked_match = True`).
-- **E02–E05**: **4/4 PASS** (`0.843 mm`, `0.553 mm`, `0.998 mm`, `0.490 mm`, all `< 1.0 mm` and `ncon = 0`). `E01` hits the right-arm straight-elbow singularity (`5.419 mm`, `ncon = 0`; `0.856 mm` when aligned to frozen right-arm frame).
-- **P01–P05**: **5/5 PASS** (`tail_pos = 0.025–0.029 mm`, `lim_exc = 0.000000`, `ncon = 0`).
+- **H01–H05**: **5/5 PASS** (`H01` `tail_pos = 0.129 mm`, `tail_ori = 0.00060 rad`, `lim_exc = 0.000000 rad`; `H02` `max_step = 0.516 deg`; `H03–H05` `tail_pos = 0.028–0.045 mm`, `lim_exc = 0.000000`, `ncon = 0`).
+- **M01–M03**: **3/3 PASS** (`0.0011 mm`, `0.0004 mm`, `0.0029 mm`, `ncon = 0`).
+- **M04–M05**: Known frozen-dataset right-arm URDF mismatch (`assets/firefly_dual.urdf` SHA-256 `a534fa06...` nominal symmetric vs frozen dataset `eafe1dab...` calibrated right arm offset `43.022 mm / 0.05929 rad`): `14.3611 mm` / `7.3624 mm` on raw targets; **`<= 0.0054 mm`** with `--align-right-frame`.
+- **C01–C05**: **5/5 PASS** (`C01–C03` `ncon = 0`; `C04–C05` `marked_match = True` — all marked collision pairs detected along with additional workcell/camera-bracket contacts).
+- **E02–E05**: **4/4 PASS** (`0.967 mm`, `0.544 mm`, `0.930 mm`, `0.501 mm`, all `< 1.0 mm`, `ncon = 0`). Under dataset-rated **`9/3 N·m`** torque limits, `E02–E05` remain **4/4 PASS** (`E04 = 0.936 mm < 1.0 mm`) and overall strict score remains **`22/25`**.
+- **E01**: Hits the right-arm straight-elbow singularity due to the right-arm frame mismatch (`5.170 mm`, `ncon = 0` on both `20/5` and `9/3 N·m`); drops to **`0.567 mm`** (`< 1.0 mm`, PASS) with `--align-right-frame --strict` (`25/25 PASS`).
+- **P01–P05**: **5/5 PASS** (`tail_pos = 0.021–0.028 mm`, `lim_exc = 0.000000`, `ncon = 0`).
 
 ### 2.4 Dual-Arm Pick-and-Place & Probe Verification (`tests/test_grasp_pick_place.py` & `tests/probe_grasp_execution.py`) — **PASS**
 
-Measured after release and `0.6 s` settle (`forbidden_contacts = 0`, `peak_torque = 11.92 Nm`, all finger speeds `<= 1.5 rad/s`, unexpected contact abort at step `100 / 100`):
+Measured after release and `0.6 s` settle (`forbidden_contacts = 0`, `peak_torque = 11.89 Nm`, all finger speeds `<= 1.5 rad/s`, unexpected contact abort at step `100 / 100`, `0.6 s` `SAFE_HOLD` post-abort drift `1.963 mm`):
 
 | Arm | Object | Lifted Z Gain | Settled XY Error | Settled Z Error | Settled Tilt | Settled Speed | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `left` | `red_block` | `85.4 mm` | `0.19 mm` | `-0.03 mm` | `0.00 deg` | `0.0000 m/s` | **PASS** |
-| `right` | `blue_cylinder` | `83.3 mm` | `0.17 mm` | `-0.03 mm` | `0.01 deg` | `0.0000 m/s` | **PASS** |
+| `left` | `red_block` | `85.2 mm` | `0.19 mm` | `-0.03 mm` | `0.00 deg` | `0.0000 m/s` | **PASS** |
+| `right` | `blue_cylinder` | `83.1 mm` | `0.15 mm` | `-0.03 mm` | `0.01 deg` | `0.0001 m/s` | **PASS** |

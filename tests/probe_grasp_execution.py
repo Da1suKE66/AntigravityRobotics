@@ -83,6 +83,8 @@ def observe_unexpected_contact() -> None:
                 print(f"Stage aborted: {error}")
         if first is None:
             raise AssertionError("The moving-object probe did not observe the induced contact")
+        if ticks != first:
+            raise AssertionError(f"Trajectory continued for {ticks - first} steps after forbidden contact")
         print(f"First forbidden contact at step {first}, last step {ticks}, "
               f"accumulated contact points {executor.runtime_forbidden_contacts}")
     finally:

@@ -54,7 +54,7 @@ class FireflyDualIK:
         self,
         model: mujoco.MjModel,
         solver: str = "daqp",
-        damping: float = 1e-3,
+        damping: float = 0.025,
         pos_cost: float = 1.0,
         ori_cost: float = 0.4,
         posture_cost: float = 1e-2,
@@ -294,6 +294,7 @@ class FireflyDualIK:
         max_iters: int,
         max_branches: int = 6,
         seeds_override: list[np.ndarray] | None = None,
+        config_limit: mink.Limit | None = None,
     ) -> list[tuple[np.ndarray, float, float, float]]:
         """Solve independent 6-DOF IK for one side across seeds, returning distinct branches."""
         dofs = self.left_arm_dofs if side == "left" else self.right_arm_dofs
@@ -301,6 +302,7 @@ class FireflyDualIK:
         other_freeze = mink.DofFreezingTask(self.model, other_dofs + self.grip_dofs, gain=1.0)
         task = self.left_task if side == "left" else self.right_task
         task.set_target(target)
+        lim = config_limit if config_limit is not None else self.limits[0]
 
         seeds = seeds_override if seeds_override is not None else self._build_arm_seeds(q_base, side)
         converged: list[tuple[np.ndarray, float, float, float]] = []
@@ -321,7 +323,7 @@ class FireflyDualIK:
                     dt_solve,
                     solver=self.solver,
                     damping=1e-6,
-                    limits=[self.limits[0]],
+                    limits=[lim],
                 )
                 vel[other_dofs + self.grip_dofs] = 0.0
                 self.configuration.integrate_inplace(vel, dt_solve)
@@ -359,6 +361,7 @@ class FireflyDualIK:
         max_iters: int = 120,
         scene_qpos_tail: np.ndarray | None = None,
         allowed_body_pairs: set[tuple[str, str]] | None = None,
+        limit_margin: float = 0.0,
     ) -> tuple[np.ndarray, dict[str, float | int | bool]]:
         """Solve global IK independently per arm and pick the closest collision-free combination."""
         saved_q = self.configuration.q.copy()
@@ -372,6 +375,11 @@ class FireflyDualIK:
         saved_right_lm = self.right_task.lm_damping
 
         col_data = mujoco.MjData(collision_check_model) if collision_check_model is not None else None
+        cfg_limit = (
+            mink.ConfigurationLimit(self.model, min_distance_from_limits=limit_margin)
+            if limit_margin > 0.0
+            else self.limits[0]
+        )
 
         def _check_ncon(q_cand: np.ndarray) -> int:
             if col_data is None or collision_check_model is None:
@@ -406,6 +414,7 @@ class FireflyDualIK:
                 self._solve_single_arm_branches(
                     q_seed, "left", left_target, pos_tol_m, ori_tol_rad, max_iters,
                     seeds_override=[q_seed[self.left_arm_dofs].copy()],
+                    config_limit=cfg_limit,
                 )[0]
                 if left_target is not None
                 else (q_seed[self.left_arm_dofs].copy(), 0.0, 0.0, 0.0)
@@ -414,6 +423,7 @@ class FireflyDualIK:
                 self._solve_single_arm_branches(
                     q_seed, "right", right_target, pos_tol_m, ori_tol_rad, max_iters,
                     seeds_override=[q_seed[self.right_arm_dofs].copy()],
+                    config_limit=cfg_limit,
                 )[0]
                 if right_target is not None
                 else (q_seed[self.right_arm_dofs].copy(), 0.0, 0.0, 0.0)
@@ -435,12 +445,16 @@ class FireflyDualIK:
                     }
 
             left_branches = (
-                self._solve_single_arm_branches(q_seed, "left", left_target, pos_tol_m, ori_tol_rad, max_iters)
+                self._solve_single_arm_branches(
+                    q_seed, "left", left_target, pos_tol_m, ori_tol_rad, max_iters, config_limit=cfg_limit
+                )
                 if left_target is not None
                 else [(q_seed[self.left_arm_dofs].copy(), 0.0, 0.0, 0.0)]
             )
             right_branches = (
-                self._solve_single_arm_branches(q_seed, "right", right_target, pos_tol_m, ori_tol_rad, max_iters)
+                self._solve_single_arm_branches(
+                    q_seed, "right", right_target, pos_tol_m, ori_tol_rad, max_iters, config_limit=cfg_limit
+                )
                 if right_target is not None
                 else [(q_seed[self.right_arm_dofs].copy(), 0.0, 0.0, 0.0)]
             )

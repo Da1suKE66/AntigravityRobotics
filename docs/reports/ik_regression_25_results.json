@@ -1,18 +1,18 @@
 {
   "total": 25,
-  "passed": 21,
+  "passed": 22,
   "cases": [
     {
       "id": "H01",
       "kind": "point_to_point",
-      "passed": false,
+      "passed": true,
       "mode": "synchronous",
-      "tail_pos_mm": 0.033,
-      "tail_ori_rad": 6e-05,
-      "tail_spd_rad_s": 5e-05,
-      "limit_exc_rad": 2.5e-05,
+      "tail_pos_mm": 0.129,
+      "tail_ori_rad": 0.0006,
+      "tail_spd_rad_s": 4e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous tail_pos=0.033mm tail_ori=0.00006rad spd=0.0000 lim_exc=0.000025 ncon=0"
+      "summary": "mode=synchronous tail_pos=0.129mm tail_ori=0.00060rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "H02",
@@ -28,12 +28,12 @@
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "tail_pos_mm": 0.048,
+      "tail_pos_mm": 0.045,
       "tail_ori_rad": 6e-05,
-      "tail_spd_rad_s": 6e-05,
+      "tail_spd_rad_s": 5e-05,
       "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous tail_pos=0.048mm tail_ori=0.00006rad spd=0.0001 lim_exc=0.000000 ncon=0"
+      "summary": "mode=synchronous tail_pos=0.045mm tail_ori=0.00006rad spd=0.0001 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "H04",
@@ -153,53 +153,53 @@
       "id": "E01",
       "kind": "cartesian_path",
       "passed": false,
-      "moving_peak_mm": 5.419,
+      "moving_peak_mm": 5.17,
       "ncon": 0,
-      "summary": "moving_peak=5.419mm ncon=0"
+      "summary": "moving_peak=5.170mm ncon=0"
     },
     {
       "id": "E02",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.843,
+      "moving_peak_mm": 0.967,
       "ncon": 0,
-      "summary": "moving_peak=0.843mm ncon=0"
+      "summary": "moving_peak=0.967mm ncon=0"
     },
     {
       "id": "E03",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.553,
+      "moving_peak_mm": 0.544,
       "ncon": 0,
-      "summary": "moving_peak=0.553mm ncon=0"
+      "summary": "moving_peak=0.544mm ncon=0"
     },
     {
       "id": "E04",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.998,
+      "moving_peak_mm": 0.93,
       "ncon": 0,
-      "summary": "moving_peak=0.998mm ncon=0"
+      "summary": "moving_peak=0.930mm ncon=0"
     },
     {
       "id": "E05",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.49,
+      "moving_peak_mm": 0.501,
       "ncon": 0,
-      "summary": "moving_peak=0.490mm ncon=0"
+      "summary": "moving_peak=0.501mm ncon=0"
     },
     {
       "id": "P01",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "tail_pos_mm": 0.029,
+      "tail_pos_mm": 0.028,
       "tail_ori_rad": 5e-05,
       "tail_spd_rad_s": 4e-05,
       "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous tail_pos=0.029mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
+      "summary": "mode=synchronous tail_pos=0.028mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "P02",
@@ -218,36 +218,36 @@
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "tail_pos_mm": 0.029,
+      "tail_pos_mm": 0.028,
       "tail_ori_rad": 8e-05,
       "tail_spd_rad_s": 4e-05,
       "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous tail_pos=0.029mm tail_ori=0.00008rad spd=0.0000 lim_exc=0.000000 ncon=0"
+      "summary": "mode=synchronous tail_pos=0.028mm tail_ori=0.00008rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "P04",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "tail_pos_mm": 0.029,
+      "tail_pos_mm": 0.028,
       "tail_ori_rad": 5e-05,
       "tail_spd_rad_s": 4e-05,
       "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous tail_pos=0.029mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
+      "summary": "mode=synchronous tail_pos=0.028mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "P05",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "tail_pos_mm": 0.025,
-      "tail_ori_rad": 4e-05,
-      "tail_spd_rad_s": 3e-05,
+      "tail_pos_mm": 0.021,
+      "tail_ori_rad": 3e-05,
+      "tail_spd_rad_s": 2e-05,
       "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous tail_pos=0.025mm tail_ori=0.00004rad spd=0.0000 lim_exc=0.000000 ncon=0"
+      "summary": "mode=synchronous tail_pos=0.021mm tail_ori=0.00003rad spd=0.0000 lim_exc=0.000000 ncon=0"
     }
   ]
 }

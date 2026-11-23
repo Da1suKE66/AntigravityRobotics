@@ -1,5 +1,24 @@
 # Changelog & Baseline Benchmark Record
 
+## [0.2.3] - 2026-11-23
+
+### Active Safe-Hold Braking, Anti-Windup Unit Fix, Library Singularity Damping & H01 Soft Margin
+- **`src/controller.py` & `src/grasp_pipeline.py`**:
+  - Added `ControlMode.SAFE_HOLD`, `enter_safe_hold(q_meas)`, `compute_brake_ctrl(q_meas, dq_meas)`, `compute_bias_torque(q_meas, dq_meas)`, and `GraspExecutor.step_safe_hold()` / `hold_safe()`: unexpected contact abort now engages active damped braking at the contact pose, reducing 0.6 s post-abort TCP drift from `16.89 mm` to **`1.963 mm`**.
+  - Fixed back-calculation anti-windup units from `kb * sat_diff` to `(kb / ki) * sat_diff` (`anti_windup_kb = 5.0 1/s`) and added viscous damping feedforward (`model.dof_damping * dq_target`). Under dataset-rated **`9/3 N·m`** torque limits, `E04` tracking error dropped from `3.980 mm` to **`0.936 mm`** (`< 1.0 mm`) and `E01` dropped from `34.125 mm` to **`5.170 mm`**, achieving the same **`22/25`** strict pass count as `20/5 N·m`.
+- **`src/ik_solver.py` & `src/planner.py`**:
+  - Raised library default `FireflyDualIK(damping=0.025)` for singularity-safe default behavior out of the box.
+  - Added dynamic `limit_margin_rad = 6e-4` in `FireflyPlanner.plan_pose_p2p` (clamping converged `q_goal` inside `[lo + 6e-4, hi - 6e-4]`), resolving `H01` (`lim_exc = 0.000000 rad`, `tail_pos = 0.129 mm`, PASS).
+- **`tests/eval_regression_25.py`**:
+  - Added opt-in `--align-right-frame` diagnostic flag (default `False` to preserve raw frozen-dataset comparisons) isolating the `a534fa06...` vs `eafe1dab...` URDF right-arm calibration offset (`43.022 mm / 0.05929 rad`).
+- **Verification**:
+  - `tests/eval_regression_25.py` (raw frozen targets): **`22/25` PASS** (`H01–H05` 5/5, `M01–M03` 3/3, `C01–C05` 5/5, `E02–E05` 4/4, `P01–P05` 5/5; identical **`22/25`** under rated `9/3 N·m`).
+  - `tests/eval_regression_25.py --align-right-frame --strict`: **`25/25` PASS** (`E01 = 0.567 mm`, `M01–M05 <= 0.0054 mm`).
+  - `tests/audit_sim_ik.py`: **9/9 PASS** (`12.365 s`).
+  - `tests/probe_grasp_execution.py`: **PASS** (exit 0; finger speeds `<= 1.5 rad/s`, abort at step `100 / 100`).
+  - `tests/verify_sim_ik.py`: **3/3 PASS** (`0.05 mm` under `+0.5 kg` payload).
+  - `tests/test_grasp_pick_place.py`: **PASS** (`0.19 / 0.15 mm`, `peak_torque = 11.89 Nm`, `forbidden_contacts = 0`).
+
 ## [0.2.2] - 2026-11-23
 
 ### Runtime Contact Abort, Gripper Speed Enforcement, Singularity Damping & Diagnostics
