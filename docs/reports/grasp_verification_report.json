@@ -1,6 +1,7 @@
 {
   "total_sim_time_s": 20.5,
-  "peak_torque_nm": 20.0,
+  "peak_torque_nm": 11.924,
+  "forbidden_contacts": 0,
   "all_passed": true,
   "tasks": [
     {
@@ -15,10 +16,10 @@
         0.41,
         0.07
       ],
-      "lifted_z_gain_mm": 84.3,
+      "lifted_z_gain_mm": 85.56,
       "settled_xyz_m": [
-        0.41004,
-        0.06975,
+        0.41019,
+        0.07018,
         0.10397
       ],
       "place_xy_err_mm": 0.26,
@@ -40,17 +41,17 @@
         0.41,
         -0.07
       ],
-      "lifted_z_gain_mm": 82.81,
+      "lifted_z_gain_mm": 83.46,
       "settled_xyz_m": [
-        0.40992,
-        -0.07087,
+        0.4102,
+        -0.07014,
         0.11197
       ],
-      "place_xy_err_mm": 0.87,
+      "place_xy_err_mm": 0.25,
       "place_z_err_mm": -0.03,
       "settled_tilt_deg": 0.01,
-      "settled_lin_speed_m_s": 0.00017,
-      "settled_ang_speed_rad_s": 0.0058,
+      "settled_lin_speed_m_s": 6e-05,
+      "settled_ang_speed_rad_s": 0.00212,
       "passed": true
     }
   ],
@@ -59,129 +60,143 @@
       "stage": "left:open_gripper",
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
-        0.0211,
-        0.0211
+        0.0213,
+        0.0213
       ]
     },
     {
       "stage": "left:pre_grasp",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 0.497,
-      "collision_free": true
+      "exec_pos_err_mm": 0.81,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "left:descend_grasp",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 1.302,
-      "collision_free": true
+      "exec_pos_err_mm": 0.977,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "left:close_grasp",
       "grip_cmd_rad": 0.52,
       "grip_meas_rad": [
-        0.3781,
-        0.386
+        0.3802,
+        0.3784
       ]
     },
     {
       "stage": "left:lift",
       "ik_pos_err_mm": 0.0002,
-      "exec_pos_err_mm": 0.147,
-      "collision_free": true
+      "exec_pos_err_mm": 0.831,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "left:transport",
       "ik_pos_err_mm": 0.0,
-      "exec_pos_err_mm": 1.228,
-      "collision_free": true
+      "exec_pos_err_mm": 0.513,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "left:lower_place",
       "ik_pos_err_mm": 0.0029,
-      "exec_pos_err_mm": 1.186,
-      "collision_free": true
+      "exec_pos_err_mm": 0.821,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "left:release",
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
-        0.0109,
-        0.0122
+        0.0643,
+        0.0644
       ]
     },
     {
       "stage": "left:retract",
       "ik_pos_err_mm": 0.0006,
-      "exec_pos_err_mm": 2.081,
-      "collision_free": true
+      "exec_pos_err_mm": 1.671,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "left:return_home",
-      "collision_free": true
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "right:open_gripper",
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
-        0.0206,
-        0.0206
+        0.0211,
+        0.0211
       ]
     },
     {
       "stage": "right:pre_grasp",
       "ik_pos_err_mm": 0.0,
-      "exec_pos_err_mm": 0.452,
-      "collision_free": true
+      "exec_pos_err_mm": 0.802,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "right:descend_grasp",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 1.245,
-      "collision_free": true
+      "exec_pos_err_mm": 0.943,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "right:close_grasp",
       "grip_cmd_rad": 0.52,
       "grip_meas_rad": [
-        0.3905,
-        0.3982
+        0.3915,
+        0.3898
       ]
     },
     {
       "stage": "right:lift",
       "ik_pos_err_mm": 0.0002,
-      "exec_pos_err_mm": 0.237,
-      "collision_free": true
+      "exec_pos_err_mm": 0.772,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "right:transport",
       "ik_pos_err_mm": 0.0001,
-      "exec_pos_err_mm": 1.321,
-      "collision_free": true
+      "exec_pos_err_mm": 0.522,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "right:lower_place",
       "ik_pos_err_mm": 0.0042,
-      "exec_pos_err_mm": 1.541,
-      "collision_free": true
+      "exec_pos_err_mm": 0.605,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "right:release",
       "grip_cmd_rad": 0.02,
       "grip_meas_rad": [
-        0.0223,
-        0.0236
+        0.0738,
+        0.0738
       ]
     },
     {
       "stage": "right:retract",
       "ik_pos_err_mm": 0.0007,
-      "exec_pos_err_mm": 2.218,
-      "collision_free": true
+      "exec_pos_err_mm": 1.709,
+      "collision_free": true,
+      "forbidden_contacts": 0
     },
     {
       "stage": "right:return_home",
-      "collision_free": true
+      "collision_free": true,
+      "forbidden_contacts": 0
     }
   ]
 }

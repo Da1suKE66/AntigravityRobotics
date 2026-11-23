@@ -1,16 +1,18 @@
 {
   "total": 25,
-  "passed": 22,
+  "passed": 21,
   "cases": [
     {
       "id": "H01",
       "kind": "point_to_point",
-      "passed": true,
+      "passed": false,
       "mode": "synchronous",
-      "left_err_mm": 0.138,
-      "right_err_mm": 0.083,
+      "tail_pos_mm": 0.037,
+      "tail_ori_rad": 0.00011,
+      "tail_spd_rad_s": 5e-05,
+      "limit_exc_rad": 0.000324,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.14mm right=0.08mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.037mm tail_ori=0.00011rad spd=0.0000 lim_exc=0.000324 ncon=0"
     },
     {
       "id": "H02",
@@ -18,38 +20,44 @@
       "passed": true,
       "max_pos_mm": 0.0,
       "max_ori_rad": 0.0,
-      "max_step_deg": 0.516,
-      "summary": "max_pos=0.000mm max_ori=0.0000rad max_step=0.516deg"
+      "max_step_deg": 0.515,
+      "summary": "max_pos=0.000mm max_ori=0.00000rad max_step=0.515deg"
     },
     {
       "id": "H03",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.187,
-      "right_err_mm": 0.083,
+      "tail_pos_mm": 0.048,
+      "tail_ori_rad": 6e-05,
+      "tail_spd_rad_s": 6e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.19mm right=0.08mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.048mm tail_ori=0.00006rad spd=0.0001 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "H04",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.296,
-      "right_err_mm": 0.083,
+      "tail_pos_mm": 0.028,
+      "tail_ori_rad": 5e-05,
+      "tail_spd_rad_s": 4e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.30mm right=0.08mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.028mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "H05",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.676,
-      "right_err_mm": 0.268,
+      "tail_pos_mm": 0.036,
+      "tail_ori_rad": 5e-05,
+      "tail_spd_rad_s": 4e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.68mm right=0.27mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.036mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "M01",
@@ -64,19 +72,19 @@
       "id": "M02",
       "kind": "single_pose",
       "passed": true,
-      "pos_err_mm": 0.0,
+      "pos_err_mm": 0.0004,
       "ori_err_rad": 0.0,
       "ncon": 0,
-      "summary": "pos_err=0.0000mm ori_err=0.00000rad ncon=0"
+      "summary": "pos_err=0.0004mm ori_err=0.00000rad ncon=0"
     },
     {
       "id": "M03",
       "kind": "single_pose",
       "passed": true,
-      "pos_err_mm": 0.0,
-      "ori_err_rad": 0.0,
+      "pos_err_mm": 0.0029,
+      "ori_err_rad": 1e-05,
       "ncon": 0,
-      "summary": "pos_err=0.0000mm ori_err=0.00000rad ncon=0"
+      "summary": "pos_err=0.0029mm ori_err=0.00001rad ncon=0"
     },
     {
       "id": "M04",
@@ -91,10 +99,10 @@
       "id": "M05",
       "kind": "single_pose",
       "passed": false,
-      "pos_err_mm": 12.0677,
-      "ori_err_rad": 0.05033,
+      "pos_err_mm": 7.3624,
+      "ori_err_rad": 0.02801,
       "ncon": 0,
-      "summary": "pos_err=12.0677mm ori_err=0.05033rad ncon=0"
+      "summary": "pos_err=7.3624mm ori_err=0.02801rad ncon=0"
     },
     {
       "id": "C01",
@@ -102,7 +110,8 @@
       "passed": true,
       "ncon": 0,
       "expected_hit": false,
-      "summary": "ncon=0 expected_hit=False pairs=[]"
+      "marked_match": true,
+      "summary": "ncon=0 expected_hit=False marked_match=True pairs=[]"
     },
     {
       "id": "C02",
@@ -110,7 +119,8 @@
       "passed": true,
       "ncon": 0,
       "expected_hit": false,
-      "summary": "ncon=0 expected_hit=False pairs=[]"
+      "marked_match": true,
+      "summary": "ncon=0 expected_hit=False marked_match=True pairs=[]"
     },
     {
       "id": "C03",
@@ -118,7 +128,8 @@
       "passed": true,
       "ncon": 0,
       "expected_hit": false,
-      "summary": "ncon=0 expected_hit=False pairs=[]"
+      "marked_match": true,
+      "summary": "ncon=0 expected_hit=False marked_match=True pairs=[]"
     },
     {
       "id": "C04",
@@ -126,7 +137,8 @@
       "passed": true,
       "ncon": 32,
       "expected_hit": true,
-      "summary": "ncon=32 expected_hit=True pairs=[('post_profile', 'right_A_fixed'), ('post_profile', 'right_B_camera_plate'), ('post_profile', 'right_grip_link_2')]"
+      "marked_match": true,
+      "summary": "ncon=32 expected_hit=True marked_match=True pairs=[('post_profile', 'right_A_fixed'), ('post_profile', 'right_B_camera_plate'), ('post_profile', 'right_grip_link_2')]"
     },
     {
       "id": "C05",
@@ -134,97 +146,108 @@
       "passed": true,
       "ncon": 15,
       "expected_hit": true,
-      "summary": "ncon=15 expected_hit=True pairs=[('left_grip_link_1', 'right_A_fixed'), ('left_grip_link_1', 'right_B_camera_plate'), ('left_grip_link_1', 'right_link_6')]"
+      "marked_match": true,
+      "summary": "ncon=15 expected_hit=True marked_match=True pairs=[('left_grip_link_1', 'right_A_fixed'), ('left_grip_link_1', 'right_B_camera_plate'), ('left_grip_link_1', 'right_link_6')]"
     },
     {
       "id": "E01",
       "kind": "cartesian_path",
       "passed": false,
-      "moving_peak_mm": 371.211,
+      "moving_peak_mm": 451.493,
       "ncon": 0,
-      "summary": "moving_peak=371.211mm ncon=0"
+      "summary": "moving_peak=451.493mm ncon=0"
     },
     {
       "id": "E02",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 1.235,
+      "moving_peak_mm": 0.846,
       "ncon": 0,
-      "summary": "moving_peak=1.235mm ncon=0"
+      "summary": "moving_peak=0.846mm ncon=0"
     },
     {
       "id": "E03",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.961,
+      "moving_peak_mm": 0.552,
       "ncon": 0,
-      "summary": "moving_peak=0.961mm ncon=0"
+      "summary": "moving_peak=0.552mm ncon=0"
     },
     {
       "id": "E04",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 1.327,
+      "moving_peak_mm": 0.993,
       "ncon": 0,
-      "summary": "moving_peak=1.327mm ncon=0"
+      "summary": "moving_peak=0.993mm ncon=0"
     },
     {
       "id": "E05",
       "kind": "cartesian_path",
       "passed": true,
-      "moving_peak_mm": 0.862,
+      "moving_peak_mm": 0.487,
       "ncon": 0,
-      "summary": "moving_peak=0.862mm ncon=0"
+      "summary": "moving_peak=0.487mm ncon=0"
     },
     {
       "id": "P01",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.115,
-      "right_err_mm": 0.086,
+      "tail_pos_mm": 0.029,
+      "tail_ori_rad": 5e-05,
+      "tail_spd_rad_s": 4e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.11mm right=0.09mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.029mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "P02",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.0,
-      "right_err_mm": 0.083,
+      "tail_pos_mm": 0.028,
+      "tail_ori_rad": 5e-05,
+      "tail_spd_rad_s": 4e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.00mm right=0.08mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.028mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "P03",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.287,
-      "right_err_mm": 0.076,
+      "tail_pos_mm": 0.029,
+      "tail_ori_rad": 8e-05,
+      "tail_spd_rad_s": 4e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.29mm right=0.08mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.029mm tail_ori=0.00008rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "P04",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.326,
-      "right_err_mm": 0.134,
+      "tail_pos_mm": 0.029,
+      "tail_ori_rad": 5e-05,
+      "tail_spd_rad_s": 4e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.33mm right=0.13mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.029mm tail_ori=0.00005rad spd=0.0000 lim_exc=0.000000 ncon=0"
     },
     {
       "id": "P05",
       "kind": "point_to_point",
       "passed": true,
       "mode": "synchronous",
-      "left_err_mm": 0.513,
-      "right_err_mm": 0.602,
+      "tail_pos_mm": 0.025,
+      "tail_ori_rad": 4e-05,
+      "tail_spd_rad_s": 3e-05,
+      "limit_exc_rad": 0.0,
       "ncon": 0,
-      "summary": "mode=synchronous left=0.51mm right=0.60mm ncon=0"
+      "summary": "mode=synchronous tail_pos=0.025mm tail_ori=0.00004rad spd=0.0000 lim_exc=0.000000 ncon=0"
     }
   ]
 }

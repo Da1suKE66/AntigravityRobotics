@@ -37,7 +37,7 @@ def test_bumpless_transfer() -> None:
     ik = FireflyDualIK(dyn_model)
 
     # Phase 1: Previous controller holds arm with gravity torque for 0.2 s
-    tau_prev = ctrl.compute_gravity_torque(data.qpos.copy())
+    tau_prev = ctrl.compute_gravity_ctrl(data.qpos.copy())
     for _ in range(100):
         data.ctrl[:] = tau_prev
         mujoco.mj_step(sim_model, data)
@@ -74,14 +74,14 @@ def test_bumpless_transfer() -> None:
 
 
 def test_gravity_steady_state_error() -> None:
-    """Compare naive PD vs G+PID+AW under gravity + unmodeled 0.5 kg payload."""
-    # Plant with unmodeled +0.5 kg payload on left_link_6 (not known to dyn_model!)
+    """Compare naive PD vs G+PID+AW under gravity + physical unmodeled 0.5 kg payload."""
+    # Plant with unmodeled +0.5 kg child body on left_link_6 (not known to dyn_model!)
     spec = mujoco.MjSpec.from_file(str(SCENE_XML))
-    spec.body("left_link_6").add_geom(
+    payload_body = spec.body("left_link_6").add_body(name="unmodeled_payload_body", pos=[0.0, 0.0, 0.12])
+    payload_body.add_geom(
         name="unmodeled_payload",
         type=mujoco.mjtGeom.mjGEOM_SPHERE,
         size=[0.02],
-        pos=[0.0, 0.0, 0.12],
         mass=0.5,
         contype=0,
         conaffinity=0,
@@ -112,9 +112,11 @@ def test_gravity_steady_state_error() -> None:
                 mujoco.mj_step(plant_model, data)
         else:
             # Pure PD without gravity comp or integral
+            ctrl = BumplessGravityController(dyn_model, gains=gains, engage_duration=0.0)
+            dofs = ctrl.act_dofs
             for _ in range(1500):
-                tau = gains.kp * (q_target - data.qpos) - gains.kd * data.qvel
-                data.ctrl[:] = np.clip(tau, -gains.tau_limit, gains.tau_limit)
+                tau = gains.kp[dofs] * (q_target[dofs] - data.qpos[dofs]) - gains.kd[dofs] * data.qvel[dofs]
+                data.ctrl[:] = np.clip(tau, -gains.tau_limit[dofs], gains.tau_limit[dofs])
                 mujoco.mj_step(plant_model, data)
 
         q_err = float(np.max(np.abs(data.qpos - q_target)))

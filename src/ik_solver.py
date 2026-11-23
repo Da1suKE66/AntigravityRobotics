@@ -68,6 +68,7 @@ class FireflyDualIK:
         self.solver = solver
         self.damping = damping
         self.site_suffix = site_suffix
+        self.freeze_grippers = freeze_grippers
         self.configuration = mink.Configuration(model)
 
         self.left_frame = f"left_{site_suffix}"
@@ -89,9 +90,9 @@ class FireflyDualIK:
         )
         self.posture_task = mink.PostureTask(model, cost=posture_cost)
 
-        # Build velocity limits from URDF specs (rad/s) and identify gripper DOFs
+        # Build velocity limits from URDF specs (rad/s) and separate arm vs gripper DOFs.
+        # Check _grip_joint_ BEFORE _joint_ because _grip_joint_ contains _joint_!
         vel_limits = {}
-        grip_dofs: list[int] = []
         self.left_arm_dofs: list[int] = []
         self.right_arm_dofs: list[int] = []
         self.grip_dofs: list[int] = []
@@ -100,21 +101,20 @@ class FireflyDualIK:
             j = model.joint(jid)
             jname = j.name
             dof = int(j.dofadr[0])
-            if "_joint_" in jname:
+            if "_grip_joint_" in jname:
+                vel_limits[jname] = 1.5
+                self.grip_dofs.append(dof)
+            elif "_joint_" in jname:
                 idx = int(jname.rsplit("_", 1)[1])
                 vel_limits[jname] = 5.585053606381854 if idx <= 4 else 12.566370614359172
                 if jname.startswith("left_"):
                     self.left_arm_dofs.append(dof)
                 elif jname.startswith("right_"):
                     self.right_arm_dofs.append(dof)
-            elif "_grip_joint_" in jname:
-                vel_limits[jname] = 1.5
-                grip_dofs.append(dof)
-                self.grip_dofs.append(dof)
 
         self.dof_freezing_task = (
-            mink.DofFreezingTask(model, grip_dofs, gain=1.0)
-            if (freeze_grippers and grip_dofs)
+            mink.DofFreezingTask(model, self.grip_dofs, gain=1.0)
+            if (freeze_grippers and self.grip_dofs)
             else None
         )
 
@@ -179,6 +179,12 @@ class FireflyDualIK:
             q_sync = (1.0 - blend_meas) * self.configuration.q + blend_meas * q_meas
             self.configuration.update(q_sync)
 
+        # Keep posture target on gripper DOFs aligned with current configuration when frozen
+        if self.freeze_grippers and self.grip_dofs:
+            tgt = self.posture_task.target_q.copy()
+            tgt[self.grip_dofs] = self.configuration.q[self.grip_dofs]
+            self.posture_task.set_target(tgt)
+
         tasks: list[mink.Task] = [self.left_task, self.right_task, self.posture_task]
         if self.dof_freezing_task is not None:
             tasks.append(self.dof_freezing_task)
@@ -191,6 +197,8 @@ class FireflyDualIK:
             damping=self.damping,
             limits=self.limits,
         )
+        if self.freeze_grippers and self.grip_dofs:
+            vel[self.grip_dofs] = 0.0
         self.configuration.integrate_inplace(vel, dt)
         return self.configuration.q.copy(), vel.copy()
 
@@ -209,14 +217,15 @@ class FireflyDualIK:
                 q_out[adr] = np.clip(q_out[adr], lo + 1e-4, hi - 1e-4)
         return q_out
 
-    def _build_seed_bank(self, q_base: np.ndarray, side: str | None = None) -> list[np.ndarray]:
-        """Build deterministic multi-branch seed bank covering wrist-pole and elbow flips."""
-        seeds = [q_base.copy()]
-        if self.model.nkey > 0:
-            seeds.append(self.model.key("home").qpos.copy())
+    def _build_arm_seeds(self, q_base: np.ndarray, side: str) -> list[np.ndarray]:
+        """Build deterministic + stratified 6-DOF seed bank for one arm."""
+        dofs = self.left_arm_dofs if side == "left" else self.right_arm_dofs
+        seeds: list[np.ndarray] = [q_base[dofs].copy()]
 
-        sides = [side] if side in ("left", "right") else ["left", "right"]
-        # Branch perturbations: (J1_val_or_delta, is_abs_j1, J2, J3, J4, J5)
+        if self.model.nkey > 0:
+            seeds.append(self.model.key("home").qpos[dofs].copy())
+
+        # Structured branch seeds: base azimuth, elbow, wrist-pole flips
         patterns = [
             (0.0, False, 0.35, 1.05, 0.74, 0.0, 0.0),
             (np.pi * 0.5, False, 0.15, 0.35, 0.30, np.pi * 0.5, 0.0),
@@ -230,19 +239,114 @@ class FireflyDualIK:
             (-2.0, True, -0.80, 0.30, 1.00, np.pi * 0.5, -1.4),
             (0.0, False, -0.35, 0.30, 0.90, np.pi * 0.5, 0.0),
             (0.0, False, -0.35, 0.30, 0.90, -np.pi * 0.5, 0.0),
+            (0.0, True, -0.40, 1.80, -0.80, 0.0, 0.0),
+            (0.0, True, 0.60, 1.60, -0.60, 0.0, 0.0),
         ]
+        q_arm_0 = q_base[dofs]
         for j1_v, abs_j1, j2, j3, j4, j5, j6 in patterns:
-            q_s = q_base.copy()
-            for s in sides:
-                dofs = self.left_arm_dofs if s == "left" else self.right_arm_dofs
-                q_s[dofs[0]] = j1_v if abs_j1 else (q_base[dofs[0]] + j1_v)
-                q_s[dofs[1]] = j2
-                q_s[dofs[2]] = j3
-                q_s[dofs[3]] = j4
-                q_s[dofs[4]] = j5
-                q_s[dofs[5]] = j6
-            seeds.append(self._clamp_to_limits(q_s))
+            cand = np.array(
+                [j1_v if abs_j1 else (q_arm_0[0] + j1_v), j2, j3, j4, j5, j6],
+                dtype=float,
+            )
+            q_full = q_base.copy()
+            q_full[dofs] = cand
+            seeds.append(self._clamp_to_limits(q_full)[dofs])
+
+        # Add deterministic uniform random arm restarts covering full joint range
+        low = np.array([self.model.jnt_range[self.model.jnt_qposadr == d][0, 0] if False else 0.0 for d in dofs])
+        jids = [jid for jid in range(self.model.njnt) if int(self.model.jnt_qposadr[jid]) in dofs]
+        jids.sort(key=lambda jid: int(self.model.jnt_qposadr[jid]))
+        lo = np.array([self.model.jnt_range[jid, 0] + 1e-3 for jid in jids])
+        hi = np.array([self.model.jnt_range[jid, 1] - 1e-3 for jid in jids])
+        rng = np.random.default_rng(17)
+        for _ in range(18):
+            seeds.append(rng.uniform(lo, hi))
+
         return seeds
+
+    @staticmethod
+    def count_robot_collisions(
+        model: mujoco.MjModel,
+        data: mujoco.MjData,
+        allowed_body_pairs: set[tuple[str, str]] | None = None,
+    ) -> int:
+        """Count forbidden contacts involving at least one robot body (ignoring non-robot resting contacts)."""
+        count = 0
+        for c in data.contact:
+            b1 = model.body(model.geom_bodyid[c.geom1]).name
+            b2 = model.body(model.geom_bodyid[c.geom2]).name
+            if not (b1.startswith(("left_", "right_")) or b2.startswith(("left_", "right_"))):
+                continue
+            if allowed_body_pairs is not None:
+                pair = tuple(sorted((b1, b2)))
+                if pair in allowed_body_pairs:
+                    continue
+            count += 1
+        return count
+
+    def _solve_single_arm_branches(
+        self,
+        q_base: np.ndarray,
+        side: str,
+        target: mink.SE3,
+        pos_tol_m: float,
+        ori_tol_rad: float,
+        max_iters: int,
+        max_branches: int = 6,
+        seeds_override: list[np.ndarray] | None = None,
+    ) -> list[tuple[np.ndarray, float, float, float]]:
+        """Solve independent 6-DOF IK for one side across seeds, returning distinct branches."""
+        dofs = self.left_arm_dofs if side == "left" else self.right_arm_dofs
+        other_dofs = self.right_arm_dofs if side == "left" else self.left_arm_dofs
+        other_freeze = mink.DofFreezingTask(self.model, other_dofs + self.grip_dofs, gain=1.0)
+        task = self.left_task if side == "left" else self.right_task
+        task.set_target(target)
+
+        seeds = seeds_override if seeds_override is not None else self._build_arm_seeds(q_base, side)
+        converged: list[tuple[np.ndarray, float, float, float]] = []
+        best_fallback: tuple[np.ndarray, float, float, float] | None = None
+        best_err_score = 1e9
+
+        dt_solve = 0.1
+        for arm_seed in seeds:
+            q_s = q_base.copy()
+            q_s[dofs] = arm_seed
+            self.configuration.update(q_s)
+            self.posture_task.set_target(q_s)
+
+            for _ in range(max_iters):
+                vel = mink.solve_ik(
+                    self.configuration,
+                    [task, self.posture_task, other_freeze],
+                    dt_solve,
+                    solver=self.solver,
+                    damping=1e-6,
+                    limits=[self.limits[0]],
+                )
+                vel[other_dofs + self.grip_dofs] = 0.0
+                self.configuration.integrate_inplace(vel, dt_solve)
+                p_m, o_r = self._pose_error(self.get_ee_pose(side), target)
+                if p_m < 1e-5 and o_r < 1e-4:
+                    break
+
+            q_arm = self.configuration.q[dofs].copy()
+            p_m, o_r = self._pose_error(self.get_ee_pose(side), target)
+            dist = float(np.linalg.norm(q_arm - q_base[dofs]))
+            err_score = p_m * 1000.0 + o_r * 50.0
+            if err_score < best_err_score:
+                best_err_score = err_score
+                best_fallback = (q_arm, p_m, o_r, dist)
+
+            if p_m <= pos_tol_m and o_r <= ori_tol_rad:
+                if all(np.linalg.norm(q_arm - prev[0]) > 0.12 for prev in converged):
+                    converged.append((q_arm, p_m, o_r, dist))
+                if len(converged) >= max_branches:
+                    break
+
+        if converged:
+            converged.sort(key=lambda item: item[3])
+            return converged
+        return [best_fallback] if best_fallback is not None else [(q_base[dofs].copy(), 1e9, 1e9, 0.0)]
 
     def solve_pose_global(
         self,
@@ -253,8 +357,10 @@ class FireflyDualIK:
         pos_tol_m: float = 2e-4,
         ori_tol_rad: float = 2e-3,
         max_iters: int = 120,
+        scene_qpos_tail: np.ndarray | None = None,
+        allowed_body_pairs: set[tuple[str, str]] | None = None,
     ) -> tuple[np.ndarray, dict[str, float | int | bool]]:
-        """Solve global IK across multi-branch seeds, returning lowest-excursion valid solution."""
+        """Solve global IK independently per arm and pick the closest collision-free combination."""
         saved_q = self.configuration.q.copy()
         saved_left = self.left_task.transform_target_to_world
         saved_right = self.right_task.transform_target_to_world
@@ -266,12 +372,18 @@ class FireflyDualIK:
         saved_right_lm = self.right_task.lm_damping
 
         col_data = mujoco.MjData(collision_check_model) if collision_check_model is not None else None
-        active_side = "left" if (left_target is not None and right_target is None) else (
-            "right" if (right_target is not None and left_target is None) else None
-        )
-        seeds = self._build_seed_bank(q_seed, side=active_side)
 
-        # Temporarily favor fast convergence with low posture regularization
+        def _check_ncon(q_cand: np.ndarray) -> int:
+            if col_data is None or collision_check_model is None:
+                return 0
+            n_robot = len(q_cand)
+            col_data.qpos[:n_robot] = q_cand
+            if scene_qpos_tail is not None and collision_check_model.nq > n_robot:
+                n_tail = min(len(scene_qpos_tail), collision_check_model.nq - n_robot)
+                col_data.qpos[n_robot : n_robot + n_tail] = scene_qpos_tail[:n_tail]
+            mujoco.mj_forward(collision_check_model, col_data)
+            return self.count_robot_collisions(collision_check_model, col_data, allowed_body_pairs)
+
         self.posture_task.cost = np.full_like(saved_posture_cost, 1e-6)
         self.left_task.set_position_cost(10.0 if left_target is not None else 0.0)
         self.left_task.set_orientation_cost(3.0 if left_target is not None else 0.0)
@@ -281,7 +393,6 @@ class FireflyDualIK:
         self.right_task.lm_damping = 1e-4
 
         best_q = q_seed.copy()
-        best_score = (1, 1, 1e9, 1e9)  # (not_tol, ncon, err, joint_dist)
         best_info: dict[str, float | int | bool] = {
             "pos_err_mm": 1e9,
             "ori_err_rad": 1e9,
@@ -290,49 +401,68 @@ class FireflyDualIK:
         }
 
         try:
-            dt_solve = 0.1
-            for s_idx, seed in enumerate(seeds):
-                self.configuration.update(seed)
-                self.posture_task.set_target(seed)
-                t_l = left_target if left_target is not None else self.get_ee_pose("left")
-                t_r = right_target if right_target is not None else self.get_ee_pose("right")
-                self.set_targets(t_l, t_r)
+            # Fast path: try current q_seed directly first
+            l0 = (
+                self._solve_single_arm_branches(
+                    q_seed, "left", left_target, pos_tol_m, ori_tol_rad, max_iters,
+                    seeds_override=[q_seed[self.left_arm_dofs].copy()],
+                )[0]
+                if left_target is not None
+                else (q_seed[self.left_arm_dofs].copy(), 0.0, 0.0, 0.0)
+            )
+            r0 = (
+                self._solve_single_arm_branches(
+                    q_seed, "right", right_target, pos_tol_m, ori_tol_rad, max_iters,
+                    seeds_override=[q_seed[self.right_arm_dofs].copy()],
+                )[0]
+                if right_target is not None
+                else (q_seed[self.right_arm_dofs].copy(), 0.0, 0.0, 0.0)
+            )
+            q_fast = q_seed.copy()
+            q_fast[self.left_arm_dofs] = l0[0]
+            q_fast[self.right_arm_dofs] = r0[0]
+            fast_pos = max(l0[1], r0[1])
+            fast_ori = max(l0[2], r0[2])
+            if fast_pos <= pos_tol_m and fast_ori <= ori_tol_rad:
+                fast_ncon = _check_ncon(q_fast)
+                if fast_ncon == 0:
+                    return q_fast, {
+                        "pos_err_mm": fast_pos * 1000.0,
+                        "ori_err_rad": fast_ori,
+                        "ncon": 0,
+                        "converged": True,
+                        "branch_combo_index": 0,
+                    }
 
-                for _ in range(max_iters):
-                    tasks: list[mink.Task] = [self.posture_task]
-                    if left_target is not None:
-                        tasks.append(self.left_task)
-                    if right_target is not None:
-                        tasks.append(self.right_task)
-                    if self.dof_freezing_task is not None:
-                        tasks.append(self.dof_freezing_task)
-                    vel = mink.solve_ik(
-                        self.configuration,
-                        tasks,
-                        dt_solve,
-                        solver=self.solver,
-                        damping=1e-6,
-                        limits=[self.limits[0]],
-                    )
-                    self.configuration.integrate_inplace(vel, dt_solve)
-                    err_l = self._pose_error(self.get_ee_pose("left"), t_l) if left_target is not None else (0.0, 0.0)
-                    err_r = self._pose_error(self.get_ee_pose("right"), t_r) if right_target is not None else (0.0, 0.0)
-                    if max(err_l[0], err_r[0]) < 1e-5 and max(err_l[1], err_r[1]) < 1e-4:
-                        break
+            left_branches = (
+                self._solve_single_arm_branches(q_seed, "left", left_target, pos_tol_m, ori_tol_rad, max_iters)
+                if left_target is not None
+                else [(q_seed[self.left_arm_dofs].copy(), 0.0, 0.0, 0.0)]
+            )
+            right_branches = (
+                self._solve_single_arm_branches(q_seed, "right", right_target, pos_tol_m, ori_tol_rad, max_iters)
+                if right_target is not None
+                else [(q_seed[self.right_arm_dofs].copy(), 0.0, 0.0, 0.0)]
+            )
 
-                q_cand = self.configuration.q.copy()
-                err_l = self._pose_error(self.get_ee_pose("left"), t_l) if left_target is not None else (0.0, 0.0)
-                err_r = self._pose_error(self.get_ee_pose("right"), t_r) if right_target is not None else (0.0, 0.0)
-                max_pos = max(err_l[0], err_r[0])
-                max_ori = max(err_l[1], err_r[1])
+            # Evaluate all (left_branch, right_branch) combinations sorted by (not_tol, err, joint_dist)
+            candidates: list[tuple[tuple[int, float, float], np.ndarray, float, float]] = []
+            for ql, pl, ol, dl in left_branches:
+                for qr, pr, orr, dr in right_branches:
+                    q_cand = q_seed.copy()
+                    q_cand[self.left_arm_dofs] = ql
+                    q_cand[self.right_arm_dofs] = qr
+                    max_pos = max(pl, pr)
+                    max_ori = max(ol, orr)
+                    in_tol = (max_pos <= pos_tol_m) and (max_ori <= ori_tol_rad)
+                    sort_key = (0 if in_tol else 1, dl + dr, max_pos * 1000.0 + max_ori * 50.0)
+                    candidates.append((sort_key, q_cand, max_pos, max_ori))
+            candidates.sort(key=lambda c: c[0])
+
+            best_score = (1, 1, 1e9, 1e9)
+            for idx_c, (_, q_cand, max_pos, max_ori) in enumerate(candidates):
+                ncon = _check_ncon(q_cand)
                 in_tol = (max_pos <= pos_tol_m) and (max_ori <= ori_tol_rad)
-
-                ncon = 0
-                if col_data is not None and collision_check_model is not None:
-                    col_data.qpos[: len(q_cand)] = q_cand
-                    mujoco.mj_forward(collision_check_model, col_data)
-                    ncon = int(col_data.ncon)
-
                 arm_dofs = self.left_arm_dofs + self.right_arm_dofs
                 j_dist = float(np.linalg.norm(q_cand[arm_dofs] - q_seed[arm_dofs]))
                 score = (0 if in_tol else 1, ncon, max_pos * 1000.0 + max_ori * 50.0, j_dist)
@@ -344,10 +474,9 @@ class FireflyDualIK:
                         "ori_err_rad": max_ori,
                         "ncon": ncon,
                         "converged": bool(in_tol and ncon == 0),
-                        "seed_index": s_idx,
+                        "branch_combo_index": idx_c,
                     }
-                    # If initial seed already converged cleanly without collision, return immediately
-                    if s_idx == 0 and in_tol and ncon == 0:
+                    if in_tol and ncon == 0:
                         break
         finally:
             self.configuration.update(saved_q)

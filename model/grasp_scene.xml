@@ -231,7 +231,7 @@
                     <site name="left_tcp_site" size="0.01" pos="0 0 0.17" group="4" rgba="1 0.4 0.1 0.7"/>
                     <body name="left_grip_link_1" pos="0 -0.014 0.076799">
                       <inertial pos="-0.00119579 -0.0251989 0.0319636" quat="0.911439 0.267238 -0.0501795 0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
-                      <joint name="left_grip_joint_1" range="0 0.6" actuatorfrcrange="-5 5" armature="0.025" damping="0.6" frictionloss="0.15" axis="-1 0 0"/>
+                      <joint name="left_grip_joint_1" range="0 0.6" actuatorfrcrange="-5 5" armature="0.002" damping="0.08" frictionloss="0.03" axis="-1 0 0"/>
                       <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_1"/>
                       <geom name="left_grip_link_1_col_0" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_1_col_0"/>
                       <geom name="left_grip_link_1_col_1" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_1_col_1"/>
@@ -239,7 +239,7 @@
                     </body>
                     <body name="left_grip_link_2" pos="0 0.014 0.076799">
                       <inertial pos="-0.00119579 0.0251989 0.0319636" quat="0.911439 -0.267238 -0.0501795 -0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
-                      <joint name="left_grip_joint_2" range="0 0.6" armature="0.025" damping="0.6" frictionloss="0.15" axis="1 0 0"/>
+                      <joint name="left_grip_joint_2" range="0 0.6" armature="0.002" damping="0.08" frictionloss="0.03" axis="1 0 0"/>
                       <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_2"/>
                       <geom name="left_grip_link_2_col_0" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_2_col_0"/>
                       <geom name="left_grip_link_2_col_1" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_2_col_1"/>
@@ -322,7 +322,7 @@
                     <site name="right_tcp_site" size="0.01" pos="0 0 0.17" group="4" rgba="1 0.4 0.1 0.7"/>
                     <body name="right_grip_link_1" pos="0 -0.014 0.076799">
                       <inertial pos="-0.00119579 -0.0251989 0.0319636" quat="0.911439 0.267238 -0.0501795 0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
-                      <joint name="right_grip_joint_1" range="0 0.6" actuatorfrcrange="-5 5" armature="0.025" damping="0.6" frictionloss="0.15" axis="-1 0 0"/>
+                      <joint name="right_grip_joint_1" range="0 0.6" actuatorfrcrange="-5 5" armature="0.002" damping="0.08" frictionloss="0.03" axis="-1 0 0"/>
                       <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_1"/>
                       <geom name="right_grip_link_1_col_0" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_1_col_0"/>
                       <geom name="right_grip_link_1_col_1" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_1_col_1"/>
@@ -330,7 +330,7 @@
                     </body>
                     <body name="right_grip_link_2" pos="0 0.014 0.076799">
                       <inertial pos="-0.00119579 0.0251989 0.0319636" quat="0.911439 -0.267238 -0.0501795 -0.308779" mass="0.0243843" diaginertia="2.2227e-05 2.18381e-05 1.5749e-06"/>
-                      <joint name="right_grip_joint_2" range="0 0.6" armature="0.025" damping="0.6" frictionloss="0.15" axis="1 0 0"/>
+                      <joint name="right_grip_joint_2" range="0 0.6" armature="0.002" damping="0.08" frictionloss="0.03" axis="1 0 0"/>
                       <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="1 1 1 1" mass="0" mesh="gr100_link_2"/>
                       <geom name="right_grip_link_2_col_0" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_2_col_0"/>
                       <geom name="right_grip_link_2_col_1" quat="1 0 0 0" type="mesh" condim="4" group="3" friction="1.2 0.05 0.005" solref="0.004" rgba="0.95 0.55 0.15 0.5" mass="0" mesh="gr100_link_2_col_1"/>
@@ -481,8 +481,8 @@
   </contact>
 
   <equality>
-    <joint joint1="left_grip_joint_2" joint2="left_grip_joint_1"/>
-    <joint joint1="right_grip_joint_2" joint2="right_grip_joint_1"/>
+    <joint joint1="left_grip_joint_2" joint2="left_grip_joint_1" solref="0.004"/>
+    <joint joint1="right_grip_joint_2" joint2="right_grip_joint_1" solref="0.004"/>
   </equality>
 
   <actuator>
@@ -492,16 +492,14 @@
     <general name="left_joint_4_motor" joint="left_joint_4" ctrlrange="-20 20" ctrllimited="true"/>
     <general name="left_joint_5_motor" joint="left_joint_5" ctrlrange="-5 5" ctrllimited="true"/>
     <general name="left_joint_6_motor" joint="left_joint_6" ctrlrange="-5 5" ctrllimited="true"/>
-    <general name="left_grip_joint_1_motor" joint="left_grip_joint_1" ctrlrange="-20 20" ctrllimited="true"/>
-    <general name="left_grip_joint_2_motor" joint="left_grip_joint_2" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="left_grip_joint_1_motor" joint="left_grip_joint_1" ctrlrange="-5 5" ctrllimited="true"/>
     <general name="right_joint_1_motor" joint="right_joint_1" ctrlrange="-20 20" ctrllimited="true"/>
     <general name="right_joint_2_motor" joint="right_joint_2" ctrlrange="-20 20" ctrllimited="true"/>
     <general name="right_joint_3_motor" joint="right_joint_3" ctrlrange="-20 20" ctrllimited="true"/>
     <general name="right_joint_4_motor" joint="right_joint_4" ctrlrange="-20 20" ctrllimited="true"/>
     <general name="right_joint_5_motor" joint="right_joint_5" ctrlrange="-5 5" ctrllimited="true"/>
     <general name="right_joint_6_motor" joint="right_joint_6" ctrlrange="-5 5" ctrllimited="true"/>
-    <general name="right_grip_joint_1_motor" joint="right_grip_joint_1" ctrlrange="-20 20" ctrllimited="true"/>
-    <general name="right_grip_joint_2_motor" joint="right_grip_joint_2" ctrlrange="-20 20" ctrllimited="true"/>
+    <general name="right_grip_joint_1_motor" joint="right_grip_joint_1" ctrlrange="-5 5" ctrllimited="true"/>
   </actuator>
 
   <keyframe>

@@ -304,15 +304,18 @@ def build_firefly_mjcf() -> tuple[pathlib.Path, pathlib.Path]:
         spec.add_exclude(bodyname1="e3_housing_cad_frame", bodyname2=f"{side}_link_1")
 
     # Configure joint dynamics and add torque-controlled motor actuators
+    # Check _grip_joint_ BEFORE _joint_ because _grip_joint_ contains _joint_!
     joint_names_ordered: list[str] = []
     for joint in spec.joints:
         jname = joint.name
         joint_names_ordered.append(jname)
-        if "_joint_" in jname:
+        if "_grip_joint_" in jname:
+            dyn = GRIPPER_DYNAMICS
+            is_mimic_follower = jname.endswith("_grip_joint_2")
+        elif "_joint_" in jname:
             idx = int(jname.rsplit("_", 1)[1])
             dyn = ARM_DYNAMICS[idx]
-        elif "_grip_joint_" in jname:
-            dyn = GRIPPER_DYNAMICS
+            is_mimic_follower = False
         else:
             continue
 
@@ -320,14 +323,20 @@ def build_firefly_mjcf() -> tuple[pathlib.Path, pathlib.Path]:
         joint.damping = [dyn["damping"], 0.0, 0.0]
         joint.frictionloss = dyn["frictionloss"]
 
-        spec.add_actuator(
-            name=f"{jname}_motor",
-            target=jname,
-            trntype=mujoco.mjtTrn.mjTRN_JOINT,
-            ctrllimited=True,
-            ctrlrange=[-dyn["effort"], dyn["effort"]],
-            gear=[1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        )
+        # URDF specifies grip_joint_2 as a passive mimic of grip_joint_1 (effort=0)
+        if not is_mimic_follower:
+            spec.add_actuator(
+                name=f"{jname}_motor",
+                target=jname,
+                trntype=mujoco.mjtTrn.mjTRN_JOINT,
+                ctrllimited=True,
+                ctrlrange=[-dyn["effort"], dyn["effort"]],
+                gear=[1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            )
+
+    # Tighten equality constraint solref on mimic gripper fingers for crisp symmetric closure
+    for eq in spec.equalities:
+        eq.solref = [0.004, 1.0]
 
     # Add end-effector sites (group 4): gripper pinch center (0.125 m) and TCP (0.170 m)
     for side in ("left", "right"):

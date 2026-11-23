@@ -78,9 +78,8 @@ class GraspExecutor:
             site_suffix="tcp_site",
             freeze_grippers=True,
         )
-        # Note: planner collision check runs on asset-only model during planning,
-        # or on grasp_scene while ignoring tabletop/prop contacts at grasp contact.
-        self.planner = FireflyPlanner(self.dyn_model, self.ik)
+        # Use the full simulation scene model for collision-aware planning!
+        self.planner = FireflyPlanner(self.sim_model, self.ik)
         self.ctrl = BumplessGravityController(self.dyn_model, engage_duration=0.25)
 
         q0 = self.data.qpos[: self.dyn_model.nq].copy()
@@ -101,6 +100,9 @@ class GraspExecutor:
         self._step_count = 0
         self._current_label = "Init"
 
+        self._active_allowed_pairs: set[tuple[str, str]] = set()
+        self.runtime_forbidden_contacts = 0
+
         if record_video:
             self.sim_model.vis.global_.offwidth = 1280
             self.sim_model.vis.global_.offheight = 720
@@ -120,6 +122,16 @@ class GraspExecutor:
     def _grip_indices(self, side: str) -> list[int]:
         return [6, 7] if side == "left" else [14, 15]
 
+    @staticmethod
+    def _allowed_pairs_for_object(side: str, obj_body: str | None) -> set[tuple[str, str]]:
+        if obj_body is None:
+            return set()
+        return {
+            tuple(sorted((f"{side}_grip_link_1", obj_body))),
+            tuple(sorted((f"{side}_grip_link_2", obj_body))),
+            tuple(sorted((f"{side}_link_6", obj_body))),
+        }
+
     def _step_control(self, q_ref: np.ndarray, dq_ref: np.ndarray) -> None:
         q_meas = self.data.qpos[: self.dyn_model.nq].copy()
         dq_meas = self.data.qvel[: self.dyn_model.nv].copy()
@@ -130,6 +142,9 @@ class GraspExecutor:
         self.sim_time += self.dt
         self._step_count += 1
         self.peak_tau = max(self.peak_tau, float(np.max(np.abs(tau))))
+        self.runtime_forbidden_contacts += FireflyDualIK.count_robot_collisions(
+            self.sim_model, self.data, self._active_allowed_pairs
+        )
 
         if self._step_count % 10 == 0:
             self.exec_trace.append(
@@ -161,9 +176,16 @@ class GraspExecutor:
             draw.text((26, 24), hud, fill=(240, 248, 255))
             self.frames.append(np.asarray(img))
 
-    def _run_trajectory(self, traj: PlannedTrajectory, label: str) -> None:
+    def _run_trajectory(
+        self,
+        traj: PlannedTrajectory,
+        label: str,
+        allowed_pairs: set[tuple[str, str]] | None = None,
+    ) -> None:
         self._current_label = label
+        self._active_allowed_pairs = allowed_pairs or set()
         steps = int(round(traj.t[-1] / self.dt))
+        q_ref = self.q_cmd.copy()
         for k in range(steps):
             q_ref, dq_ref = traj.sample(k * self.dt)
             # Preserve current commanded gripper targets
@@ -183,23 +205,41 @@ class GraspExecutor:
         target_pose: mink.SE3,
         duration: float,
         planned_segments: list[PlannedTrajectory],
+        allowed_obj: str | None = None,
     ) -> dict[str, object]:
         q_start = self.q_cmd.copy()
+        scene_tail = self.data.qpos[self.dyn_model.nq :].copy()
+        allowed_pairs = self._allowed_pairs_for_object(side, allowed_obj)
         traj, ik_info = self.planner.plan_pose_p2p(
             q_start,
             left_target=target_pose if side == "left" else None,
             right_target=target_pose if side == "right" else None,
             duration=duration,
             dt=self.dt,
+            scene_qpos_tail=scene_tail,
+            allowed_body_pairs=allowed_pairs,
         )
+        if not ik_info.get("converged", False):
+            raise RuntimeError(
+                f"IK did not converge for {label}: pos_err={ik_info['pos_err_mm']:.2f}mm, "
+                f"ori_err={ik_info['ori_err_rad']:.4f}rad, ncon={ik_info['ncon']}"
+            )
+        if not traj.collision_free:
+            raise RuntimeError(
+                f"Planned trajectory for {label} failed collision check (max_ncon={traj.max_ncon})"
+            )
+
         planned_segments.append(traj)
-        self._run_trajectory(traj, label)
+        prev_forb = self.runtime_forbidden_contacts
+        self._run_trajectory(traj, label, allowed_pairs=allowed_pairs)
+        step_forb = self.runtime_forbidden_contacts - prev_forb
         err_mm = float(np.linalg.norm(self.data.site(f"{side}_tcp_site").xpos - target_pose.translation()) * 1000.0)
         info = {
             "stage": label,
             "ik_pos_err_mm": round(float(ik_info["pos_err_mm"]), 4),
             "exec_pos_err_mm": round(err_mm, 3),
-            "collision_free": traj.collision_free,
+            "collision_free": bool(traj.collision_free and step_forb == 0),
+            "forbidden_contacts": int(step_forb),
         }
         self.stage_logs.append(info)
         return info
@@ -210,18 +250,49 @@ class GraspExecutor:
         side: str,
         duration: float,
         planned_segments: list[PlannedTrajectory],
+        allowed_obj: str | None = None,
     ) -> None:
         q_home = self.dyn_model.key("home").qpos.copy()
         q_goal = self.q_cmd.copy()
         dofs = self.ik.left_arm_dofs if side == "left" else self.ik.right_arm_dofs
         q_goal[dofs] = q_home[dofs]
-        traj = self.planner.plan_joint_p2p(self.q_cmd.copy(), q_goal, duration=duration, dt=self.dt)
+        scene_tail = self.data.qpos[self.dyn_model.nq :].copy()
+        allowed_pairs = self._allowed_pairs_for_object(side, allowed_obj)
+        traj = self.planner.plan_joint_p2p(
+            self.q_cmd.copy(),
+            q_goal,
+            duration=duration,
+            dt=self.dt,
+            scene_qpos_tail=scene_tail,
+            allowed_body_pairs=allowed_pairs,
+        )
+        if not traj.collision_free:
+            raise RuntimeError(
+                f"Planned return-home trajectory for {label} failed collision check (max_ncon={traj.max_ncon})"
+            )
         planned_segments.append(traj)
-        self._run_trajectory(traj, label)
-        self.stage_logs.append({"stage": label, "collision_free": traj.collision_free})
+        prev_forb = self.runtime_forbidden_contacts
+        self._run_trajectory(traj, label, allowed_pairs=allowed_pairs)
+        step_forb = self.runtime_forbidden_contacts - prev_forb
+        self.stage_logs.append(
+            {
+                "stage": label,
+                "collision_free": bool(traj.collision_free and step_forb == 0),
+                "forbidden_contacts": int(step_forb),
+            }
+        )
 
-    def _set_gripper(self, label: str, side: str, q_target: float, ramp_s: float = 0.45, hold_s: float = 0.25) -> None:
+    def _set_gripper(
+        self,
+        label: str,
+        side: str,
+        q_target: float,
+        ramp_s: float = 0.45,
+        hold_s: float = 0.25,
+        allowed_obj: str | None = None,
+    ) -> None:
         self._current_label = label
+        self._active_allowed_pairs = self._allowed_pairs_for_object(side, allowed_obj)
         g_idx = self._grip_indices(side)
         g0 = self.q_cmd[g_idx].copy()
         g1 = np.array([q_target, q_target], dtype=float)
@@ -248,6 +319,7 @@ class GraspExecutor:
 
     def _hold(self, label: str, duration: float) -> None:
         self._current_label = label
+        self._active_allowed_pairs = set()
         for _ in range(int(round(duration / self.dt))):
             self._step_control(self.q_cmd.copy(), np.zeros(self.dyn_model.nv))
 
@@ -283,21 +355,21 @@ class GraspExecutor:
         # Stage 2: Move to pre-grasp
         self._move_pose(f"{side}:pre_grasp", side, p_pre_grasp, duration=1.6, planned_segments=segments)
         # Stage 3: Descend to grasp
-        self._move_pose(f"{side}:descend_grasp", side, p_grasp, duration=0.9, planned_segments=segments)
+        self._move_pose(f"{side}:descend_grasp", side, p_grasp, duration=0.9, planned_segments=segments, allowed_obj=spec.obj_body)
         # Stage 4: Close gripper onto object
-        self._set_gripper(f"{side}:close_grasp", side, spec.grip_close, ramp_s=0.45, hold_s=0.35)
+        self._set_gripper(f"{side}:close_grasp", side, spec.grip_close, ramp_s=0.45, hold_s=0.35, allowed_obj=spec.obj_body)
         # Stage 5: Lift and verify mid-air retention
-        self._move_pose(f"{side}:lift", side, p_lift, duration=0.9, planned_segments=segments)
+        self._move_pose(f"{side}:lift", side, p_lift, duration=0.9, planned_segments=segments, allowed_obj=spec.obj_body)
         lifted_pos = self.data.body(spec.obj_body).xpos.copy()
         lift_gain_mm = float((lifted_pos[2] - obj_pos0[2]) * 1000.0)
         # Stage 6: Transport over place zone
-        self._move_pose(f"{side}:transport", side, p_pre_place, duration=1.5, planned_segments=segments)
+        self._move_pose(f"{side}:transport", side, p_pre_place, duration=1.5, planned_segments=segments, allowed_obj=spec.obj_body)
         # Stage 7: Lower onto place zone
-        self._move_pose(f"{side}:lower_place", side, p_place, duration=0.9, planned_segments=segments)
+        self._move_pose(f"{side}:lower_place", side, p_place, duration=0.9, planned_segments=segments, allowed_obj=spec.obj_body)
         # Stage 8: Open gripper to release
-        self._set_gripper(f"{side}:release", side, spec.grip_open, ramp_s=0.35, hold_s=0.15)
+        self._set_gripper(f"{side}:release", side, spec.grip_open, ramp_s=0.35, hold_s=0.15, allowed_obj=spec.obj_body)
         # Stage 9: Retract upward & return arm to home
-        self._move_pose(f"{side}:retract", side, p_retract, duration=0.8, planned_segments=segments)
+        self._move_pose(f"{side}:retract", side, p_retract, duration=0.8, planned_segments=segments, allowed_obj=spec.obj_body)
         self._move_joint_home(f"{side}:return_home", side, duration=1.3, planned_segments=segments)
         # Stage 10: Physical settle window after release
         self._hold(f"{side}:settle", duration=0.6)
@@ -394,7 +466,8 @@ class GraspExecutor:
         report = {
             "total_sim_time_s": round(self.sim_time, 3),
             "peak_torque_nm": round(self.peak_tau, 3),
-            "all_passed": all(bool(r["passed"]) for r in task_results),
+            "forbidden_contacts": int(self.runtime_forbidden_contacts),
+            "all_passed": bool(all(bool(r["passed"]) for r in task_results) and self.runtime_forbidden_contacts == 0),
             "tasks": task_results,
             "stages": self.stage_logs,
         }

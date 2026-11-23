@@ -15,6 +15,7 @@ def test_dual_arm_pick_and_place() -> None:
     """Verify both left (red_block) and right (blue_cylinder) complete pick, lift, transport, place, and settle."""
     report = run_dual_arm_pick_and_place(record_video=False)
     assert report["all_passed"], f"Pick-and-place failed: {report['tasks']}"
+    assert report.get("forbidden_contacts", 0) == 0, f"Forbidden runtime contacts: {report.get('forbidden_contacts')}"
     for task in report["tasks"]:
         assert task["lifted_z_gain_mm"] > 80.0, f"Insufficient lift: {task}"
         assert task["place_xy_err_mm"] < 3.0, f"Placement XY error too high: {task}"

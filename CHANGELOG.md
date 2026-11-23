@@ -1,5 +1,23 @@
 # Changelog & Baseline Benchmark Record
 
+## [0.2.1] - 2026-11-23
+
+### Audit Remediation: Grasp Safety Gates, Per-Arm Multi-Seed IK, Gripper Mimic & Payload PID
+- **`src/build_mjcf.py`, `src/ik_solver.py`, `src/controller.py`**:
+  - Fixed `"_grip_joint_"` vs `"_joint_"` substring bug across MJCF builder, IK DOF classification, and controller gains; removed independent motor actuator on mimic follower `*_grip_joint_2` (`effort = 0 Nm` per URDF, `nu = 14`).
+  - Enabled `mink.DofFreezingTask` + zeroed gripper velocity outputs during arm IK (`<= 1e-6 rad/s` on measured gripper changes).
+  - Tuned G+PID+AW gains (`kp=240/180/65`, `ki=320/260/95`, `kd=18/14/4.0`, `i_clamp=0.12`) and fixed `tests/verify_sim_ik.py` to attach the `0.5 kg` payload as a child body (`0.05 mm` SSE at 3.0 s).
+- **`src/ik_solver.py` & `src/planner.py`**:
+  - Upgraded `solve_pose_global` to independent per-arm 6-DOF multi-branch search + collision-free combination (`40/40` on wide-workspace poses in `tests/audit_sim_ik.py`).
+  - Added strict position limit validation, quintic duration stretching to respect URDF velocity limits, dense `stride=1` collision checking, and `scene_qpos_tail` / `allowed_body_pairs` support in `FireflyPlanner`.
+- **`src/grasp_pipeline.py` & `tests/test_grasp_pick_place.py`**:
+  - Connected `GraspExecutor` to full `grasp_scene.xml` for collision checking, added pre-execution IK convergence & collision rejection gates, and added runtime forbidden-contact monitoring (`forbidden_contacts = 0`, peak torque `11.92 Nm`, placement XY error `0.26 / 0.25 mm`).
+- **Verification**:
+  - `tests/audit_sim_ik.py`: **9/9 PASS** (`11.58 s`).
+  - `tests/verify_sim_ik.py`: **3/3 PASS**.
+  - `tests/test_grasp_pick_place.py`: **PASS**.
+  - `tests/eval_regression_25.py` (strict dataset thresholds): **21/25 PASS** (`E02–E05 < 1.0 mm`, `H03–H05` & `P01–P05 < 0.05 mm` at 4.0 s hold, `C01–C05` 5/5 marked pair match).
+
 ## [0.2.0] - 2026-11-23
 
 ### Collision Remediation, Global Multi-Seed IK & Dual-Arm Pick-and-Place

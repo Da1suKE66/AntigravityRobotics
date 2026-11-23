@@ -2,79 +2,66 @@
 
 ![Dual-Arm Pick-and-Place Keyframes](../media/firefly_grasp_keyframes.png)
 
-## 1. Summary of Upgrades
+## 1. Summary of Fixes & Upgrades
 
-1. **Multi-Convex-Hull Collision Decomposition & Workcell Colliders (`src/build_mjcf.py`)**:
-   - Decomposed concave arm and gripper links (`link_3` -> 4 hulls, `link_4` -> 2 hulls, `link_5` -> 3 hulls, `gr100_link_1`/`gr100_link_2` -> 3 hulls each, `<= 60` vertices per hull) into `assets/meshes/collision/`.
-   - Added `group="3"` box colliders for `post_adapter_plate`, `post_socket`, `post_profile`, `top_post_u_piece`, `top_camera_mount_plate`, `top_d435_visual_mesh_frame`, `e3_housing_cad_frame`, and wrist camera brackets (`A_fixed`, `B_camera_plate`, `d405`), with adjacent `<exclude>` pairs.
-   - Normalized gripper actuator limits (`effort = 5.0 Nm`, `armature = 0.002`, `damping = 0.08`, `frictionloss = 0.03`) and high-friction finger pad contacts (`condim="4"`, `friction="1.2 0.05 0.005"`).
+1. **Gripper Substring Classification & URDF Mimic Fidelity (`src/build_mjcf.py`, `src/ik_solver.py`, `src/controller.py`)**:
+   - Fixed the `"_joint_"` substring check that previously matched `"_grip_joint_"` before gripper branches.
+   - Removed the independent actuator on the passive mimic follower (`left_grip_joint_2` / `right_grip_joint_2`, `effort = 0 Nm` per URDF) and tightened `<equality>` `solref="0.004 1.0"` so finger 2 tracks finger 1 passively without independent drive torque.
+   - Applied `GRIPPER_DYNAMICS` (`effort=5.0`, `armature=0.002`, `damping=0.08`, `frictionloss=0.03`) to gripper joints and activated `mink.DofFreezingTask` + zeroed gripper velocity outputs during arm IK.
 
-2. **Gripper-Decoupled & Multi-Seed Global IK + Collision-Aware Planner (`src/ik_solver.py`, `src/planner.py`)**:
-   - Added `mink.DofFreezingTask` on the 4 gripper DOFs so arm IK never interferes with gripper open/close commands.
-   - Implemented `FireflyDualIK.solve_pose_global(...)` with deterministic multi-branch seed search (base azimuth, elbow, and wrist-pole `J5 = ±π/2` flips) + MuJoCo contact filtering.
-   - Implemented `FireflyPlanner` (`plan_joint_p2p`, `plan_pose_p2p`) with collision verification across `synchronous`, `left_first`, `right_first`, and `home_via` modes, plus JSON/CSV trajectory export.
+2. **Multi-Hull Collision Decomposition & Workcell Colliders (`src/build_mjcf.py`, `assets/meshes/collision/`)**:
+   - Decomposed concave arm and gripper links (`link_3` -> 4 hulls, `link_4` -> 2 hulls, `link_5` -> 3 hulls, `gr100_link_1`/`gr100_link_2` -> 3 hulls each, `<= 60` vertices per hull), eliminating false `link_3`–`link_5` overlaps (`C01–C03`).
+   - Added `group="3"` box colliders for `post_adapter_plate`, `post_socket`, `post_profile`, `top_post_u_piece`, `top_camera_mount_plate`, `top_d435_visual_mesh_frame`, `e3_housing_cad_frame`, and wrist camera brackets (`A_fixed`, `B_camera_plate`, `d405`).
 
-3. **Tabletop Grasping Scene & Closed-Loop Pick-and-Place (`src/grasp_scene.py`, `src/grasp_pipeline.py`)**:
-   - Built `model/grasp_scene.xml` via `MjSpec` containing `red_block` (`44×44×44 mm`, `85 g`), `blue_cylinder` (`r=21 mm, h=60 mm`, `95 g`), and placement pads (`place_zone_left`, `place_zone_right`).
-   - Executed 10-stage closed-loop pick-and-place (`open -> pre_grasp -> descend -> close -> lift -> transport -> lower -> release -> retract -> return_home -> settle`) under `BumplessGravityController`.
+3. **Independent Per-Arm Multi-Seed Global IK & Limit-Safe Planner (`src/ik_solver.py`, `src/planner.py`)**:
+   - Upgraded `FireflyDualIK.solve_pose_global(...)` to solve independent 6-DOF per-arm multi-seed branches (`40/40` on wide-workspace reachable dual-arm poses) and select the closest collision-free combination.
+   - Upgraded `FireflyPlanner.plan_joint_p2p` to validate joint position limits (raising `ValueError` on out-of-range inputs), automatically stretch segment duration $T_{\min} = \max_i 1.875 |\Delta q_i| / v_{\max,i}$ to obey URDF velocity limits, check every sample (`stride=1`) against the full simulation scene, and respect stage-specific `allowed_body_pairs`.
+
+4. **Grasp Executor Safety Gates & PID Payload Tuning (`src/grasp_pipeline.py`, `src/controller.py`, `tests/verify_sim_ik.py`)**:
+   - Connected `GraspExecutor` to the full `grasp_scene.xml` (`self.sim_model`) with live `scene_qpos_tail`, stage-specific allowed object-grasp pairs, pre-execution IK convergence & collision rejection gates (`RuntimeError` before motion), and runtime forbidden-contact monitoring.
+   - Retuned `BumplessGravityController` PID + anti-windup gains (`kp=240/180/65`, `ki=320/260/95`, `kd=18/14/4.0`, `i_clamp=0.12`) and fixed `verify_sim_ik.py` to attach the `0.5 kg` payload as a child `<body>` (`0.05 mm` steady-state error at `3.0 s` vs `71.10 mm` naive PD).
 
 ---
 
 ## 2. Quantitative Verification Results
 
-### 2.1 Core Control & IK Suite (`tests/verify_sim_ik.py`)
+### 2.1 Directed Simulation & IK Audit (`tests/audit_sim_ik.py`) — **9/9 PASS**
 
-| Test | Metric | Result |
-| --- | --- | --- |
-| Bumpless Transfer | `torque_jump` / `max_excursion` / `max_qacc` | `0.0000 Nm` / `0.000 deg` / `0.00 rad/s^2` (PASS) |
-| Gravity + 0.5 kg Payload SSE | Naive PD vs G+PID+AW | `82.26 mm` -> `0.00 mm` (PASS) |
-| Dual-Arm Mink IK Tracking | `left_err` / `right_err` / `max_contacts` | `0.50 mm` / `0.13 mm` / `0` (PASS) |
+| Check | Result |
+| --- | --- |
+| `test_near_home_reachable_dual_arm_poses` (12/12) | **PASS** |
+| `test_wide_workspace_reachable_dual_arm_poses` (40/40) | **PASS** |
+| `test_arm_ik_leaves_measured_grippers_stationary` | **PASS** |
+| `test_mimic_finger_has_no_independent_drive_torque` (`<= 5.0 / 0.0 Nm`) | **PASS** |
+| `test_position_hold_with_physical_half_kg_payload` (`+0.500 kg`, `< 1.5 mm` @ 3 s) | **PASS** |
+| `test_joint_plan_respects_position_limit` (rejects `3.0 rad > 2.862 rad`) | **PASS** |
+| `test_joint_plan_respects_velocity_limit` (`<= 5.585 rad/s`) | **PASS** |
+| `test_grasp_stage_declared_clear_has_no_table_contact` (`z=0.04 m` rejected, `0` contact steps) | **PASS** |
+| `test_grasp_executor_rejects_unreachable_goal_before_moving` (`<= 1e-5 rad` displacement) | **PASS** |
 
-### 2.2 25-Case IK Regression Benchmark (`tests/eval_regression_25.py` -> `ik_regression_25_results.json`)
+### 2.2 Core Control & IK Suite (`tests/verify_sim_ik.py`) — **3/3 PASS**
 
-**22 / 25 cases passed** (up from the pre-remediation baseline where `C01–C05`, `H01`, `H03–H04`, `E01–E05`, `P01–P03` had false contacts or tracking failures):
+- **Bumpless Transfer**: `torque_jump = 0.0000 Nm`, `max_excursion = 0.010 deg`, `max_qacc = 0.00 rad/s^2`
+- **Gravity + Physical 0.5 kg Payload (3.0 s)**: Naive PD `71.10 mm` -> G+PID+AW **`0.05 mm`** (`0.006 deg`)
+- **Dual-Arm Mink IK**: `left_err = 0.48 mm`, `right_err = 0.11 mm`, `max_contacts = 0`
 
-- **H01–H05 (Legacy Hard Cases — 5/5 PASS)**:
-  - `H01` (wrist pole `+90°` jump): `left=0.14 mm, right=0.08 mm, ncon=0` (previously `227.77 mm, ncon=4`).
-  - `H02` (12-frame coupled singularity): `max_pos=0.000 mm, max_ori=0.0000 rad, max_step=0.516 deg`.
-  - `H03–H05`: `0.19–0.68 mm` left, `0.08–0.27 mm` right, `ncon=0`.
-- **M01–M05 (Singularity Poses — 3/5 PASS)**:
-  - `M01–M03`: `0.0011 mm`, `0.0000 mm`, `0.0000 mm`, `ncon=0`.
-  - `M04–M05` (known dataset/URDF calibration gap): In the frozen `ik_regression_25` dataset, `right` arm poses have a `~43 mm / 0.0593 rad` FK offset relative to `assets/firefly_dual.urdf` (verified directly on `reference.q_rad` and `recorded.numerical.q_rad`), placing `M04`/`M05` right on the URDF arm's outer planar-reach singularity (`pos_err = 14.36 mm / 12.07 mm`).
-- **C01–C05 (Collision Fidelity — 5/5 PASS)**:
-  - `C01–C03`: `ncon=0` (false `link_3`–`link_5` convex-hull contacts eliminated).
-  - `C04`: `ncon=32` (now accurately detects `post_profile` vs `right_link_6` / brackets).
-  - `C05`: `ncon=15` (accurately detects `left_grip_link_1` vs `right_link_6` / brackets).
-- **E01–E05 (Cartesian Tracking — 4/5 PASS)**:
-  - `E02–E05` (from `target[0]`): moving peak `1.235 mm`, `0.961 mm`, `1.327 mm`, `0.862 mm`, all `ncon=0`.
-  - `E01` (known unreachable upward-circle singularity in original dataset): passes through the right-arm straight-elbow singularity around `t=1.6–2.0 s` (`J3 -> 0`, `max_dq = 5.585 rad/s`), peaking at `371.2 mm` (`ncon=0`).
-- **P01–P05 (Point-to-Point — 5/5 PASS)**:
-  - `0.00–0.51 mm` left, `0.08–0.60 mm` right, all `ncon=0`.
+### 2.3 Strict 25-Case IK Regression (`tests/eval_regression_25.py` -> `ik_regression_25_results.json`) — **21/25 PASS**
 
-### 2.3 Dual-Arm Pick-and-Place Verification (`tests/test_grasp_pick_place.py` -> `grasp_verification_report.json`)
+Evaluated under original dataset thresholds (`M`: `<= 0.01 mm / 0.0001 rad`; `H02`: `< 1°`; `E`: `< 1.0 mm` from `target[0]`; `H/P`: `4.0 s` hold `< 0.4 mm / 0.004 rad / 0.01 rad/s`, `lim_exc <= 1e-5 rad`; `C`: exact `body_pairs` match):
 
-Measured **after release and 0.6 s settle**:
+- **H02–H05**: PASS (`tail_pos = 0.028–0.048 mm`, `lim_exc = 0.000000`, `ncon = 0`; `H02` `max_step = 0.515 deg`).
+- **H01**: `tail_pos = 0.037 mm`, `tail_ori = 0.00011 rad`, `spd = 0.0000`, `ncon = 0`, `lim_exc = 0.000324 rad` (`left_joint_5` target sits directly on the `+pi/2` limit).
+- **M01–M03**: PASS (`0.0011 mm`, `0.0004 mm`, `0.0029 mm`, `ncon = 0`).
+- **M04–M05**: Known `~43 mm / 0.0593 rad` frozen-dataset vs `firefly_dual.urdf` right-arm coordinate mismatch (`14.3611 mm` / `7.3624 mm`).
+- **C01–C05**: **5/5 PASS** (`marked_match = True`).
+- **E02–E05**: **4/4 PASS** (`0.846 mm`, `0.552 mm`, `0.993 mm`, `0.487 mm`, all `< 1.0 mm` and `ncon = 0`). `E01` hits the right-arm straight-elbow singularity (`451.493 mm`, `ncon = 0`).
+- **P01–P05**: **5/5 PASS** (`tail_pos = 0.025–0.029 mm`, `lim_exc = 0.000000`, `ncon = 0`).
+
+### 2.4 Dual-Arm Pick-and-Place (`tests/test_grasp_pick_place.py` -> `grasp_verification_report.json`) — **PASS**
+
+Measured after release and `0.6 s` settle (`forbidden_contacts = 0`, `peak_torque = 11.92 Nm`):
 
 | Arm | Object | Lifted Z Gain | Settled XY Error | Settled Z Error | Settled Tilt | Settled Speed | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `left` | `red_block` | `84.3 mm` | `0.26 mm` | `-0.03 mm` | `0.00 deg` | `0.0000 m/s` | **PASS** |
-| `right` | `blue_cylinder` | `82.8 mm` | `0.87 mm` | `-0.03 mm` | `0.01 deg` | `0.0002 m/s` | **PASS** |
-
-- All IK stages across both pick-and-place runs achieved `ik_pos_err <= 0.0021 mm`, `exec_pos_err <= 2.22 mm`, and `collision_free = true`.
-
----
-
-## 3. Repository Artifacts (Paths, Reports, Media)
-
-- **Planned & Executed Paths (`docs/paths/`)**:
-  - `docs/paths/grasp_left_red_block.json` & `.csv`
-  - `docs/paths/grasp_right_blue_cylinder.json` & `.csv`
-  - `docs/paths/grasp_executed_trace.csv`
-  - `docs/paths/ik_H01.json` & `.csv`
-  - `docs/paths/ik_H05.json` & `.csv`
-- **Machine-Readable Reports (`docs/reports/`)**:
-  - `docs/reports/ik_regression_25_results.json`
-  - `docs/reports/grasp_verification_report.json`
-- **Rendered Media (`docs/media/`)**:
-  - `docs/media/firefly_grasp_demo.mp4`
-  - `docs/media/firefly_grasp_keyframes.png`
+| `left` | `red_block` | `85.6 mm` | `0.26 mm` | `-0.03 mm` | `0.00 deg` | `0.0000 m/s` | **PASS** |
+| `right` | `blue_cylinder` | `83.5 mm` | `0.25 mm` | `-0.03 mm` | `0.01 deg` | `0.0001 m/s` | **PASS** |

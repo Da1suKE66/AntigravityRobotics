@@ -1,7 +1,8 @@
-"""Evaluate upgraded FireflyDualIK and FireflyPlanner on the 25-case ik_regression_25 suite."""
+"""Evaluate FireflyDualIK and FireflyPlanner on the 25-case ik_regression_25 suite with strict dataset criteria."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import sys
@@ -49,21 +50,29 @@ def _pose_err(actual: mink.SE3, target: mink.SE3) -> tuple[float, float]:
     return pos_mm, rot_err
 
 
+def _site_se3(data: mujoco.MjData, site_name: str) -> mink.SE3:
+    site = data.site(site_name)
+    return mink.SE3.from_rotation_and_translation(
+        mink.SO3.from_matrix(site.xmat.reshape(3, 3)),
+        site.xpos.copy(),
+    )
+
+
 def _make_tcp_ik(model: mujoco.MjModel) -> FireflyDualIK:
     return FireflyDualIK(
         model,
         solver="daqp",
-        damping=1e-4,
-        pos_cost=4.0,
-        ori_cost=1.2,
-        posture_cost=1e-3,
-        lm_damping=0.05,
+        damping=1e-5,
+        pos_cost=10.0,
+        ori_cost=3.0,
+        posture_cost=1e-4,
+        lm_damping=1e-3,
         site_suffix="tcp_site",
         freeze_grippers=True,
     )
 
 
-def eval_all(save_report: bool = True) -> list[dict[str, object]]:
+def eval_all(save_report: bool = True, strict: bool = False) -> list[dict[str, object]]:
     manifest = json.loads((REG_DIR / "manifest.json").read_text())
     sim_model = mujoco.MjModel.from_xml_path(str(SCENE_XML))
     dyn_model = mujoco.MjModel.from_xml_path(str(ASSET_XML))
@@ -71,6 +80,9 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
 
     ik = _make_tcp_ik(dyn_model)
     planner = FireflyPlanner(sim_model, ik)
+    arm_jids = [
+        dyn_model.joint(f"{s}_joint_{i}").id for s in ("left", "right") for i in range(1, 7)
+    ]
 
     results: list[dict[str, object]] = []
     for entry in manifest["cases"]:
@@ -85,21 +97,21 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
             data = mujoco.MjData(sim_model)
             data.qpos[:] = _q12_to_q16(q12)
             mujoco.mj_forward(sim_model, data)
-            pairs = sorted(
-                {
-                    tuple(
-                        sorted(
-                            (
-                                sim_model.body(sim_model.geom_bodyid[c.geom1]).name,
-                                sim_model.body(sim_model.geom_bodyid[c.geom2]).name,
-                            )
+            hit_pairs = {
+                tuple(
+                    sorted(
+                        (
+                            sim_model.body(sim_model.geom_bodyid[c.geom1]).name,
+                            sim_model.body(sim_model.geom_bodyid[c.geom2]).name,
                         )
                     )
-                    for c in data.contact
-                }
-            )
+                )
+                for c in data.contact
+            }
+            marked_pairs = [tuple(sorted(p)) for p in ref.get("body_pairs", [])]
             expected_hit = bool(case["expected"]["stl_intersection"])
-            passed = (data.ncon > 0) == expected_hit
+            marked_match = all((p in hit_pairs) == expected_hit for p in marked_pairs)
+            passed = marked_match and ((len(hit_pairs) > 0) == expected_hit)
             results.append(
                 {
                     "id": cid,
@@ -107,7 +119,8 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
                     "passed": passed,
                     "ncon": int(data.ncon),
                     "expected_hit": expected_hit,
-                    "summary": f"ncon={data.ncon} expected_hit={expected_hit} pairs={pairs[:3]}",
+                    "marked_match": marked_match,
+                    "summary": f"ncon={data.ncon} expected_hit={expected_hit} marked_match={marked_match} pairs={sorted(hit_pairs)[:3]}",
                 }
             )
             continue
@@ -135,7 +148,7 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
                 p_mm, o_rad = _pose_err(ik_seq.get_ee_pose(side), t_se3)
                 max_pos_mm = max(max_pos_mm, p_mm)
                 max_ori_rad = max(max_ori_rad, o_rad)
-            passed = max_pos_mm < 0.1 and max_ori_rad < 0.001 and max_step_deg < 2.0
+            passed = max_pos_mm <= 0.01 and max_ori_rad <= 0.0001 and max_step_deg < 1.0
             results.append(
                 {
                     "id": cid,
@@ -144,7 +157,7 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
                     "max_pos_mm": round(max_pos_mm, 4),
                     "max_ori_rad": round(max_ori_rad, 5),
                     "max_step_deg": round(max_step_deg, 3),
-                    "summary": f"max_pos={max_pos_mm:.3f}mm max_ori={max_ori_rad:.4f}rad max_step={max_step_deg:.3f}deg",
+                    "summary": f"max_pos={max_pos_mm:.3f}mm max_ori={max_ori_rad:.5f}rad max_step={max_step_deg:.3f}deg",
                 }
             )
             continue
@@ -161,7 +174,7 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
             )
             ik.reset_to_measured(q_sol)
             p_mm, o_rad = _pose_err(ik.get_ee_pose(side), t_se3)
-            passed = p_mm < 0.1 and o_rad < 0.001
+            passed = p_mm <= 0.01 and o_rad <= 0.0001
             results.append(
                 {
                     "id": cid,
@@ -176,7 +189,7 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
             continue
 
         if kind == "cartesian_path":
-            # Align initial pose to target[0] (removes 43 mm URDF right-offset mismatch), then track trajectory
+            # Align initial pose to target[0] (isolates tracking from frozen-dataset 43 mm right offset)
             q_start = _q12_to_q16(inp["start_q_rad"])
             times = np.array(inp["waypoint_times_s"], dtype=float)
             tgts = inp["targets_world"]
@@ -191,7 +204,7 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
             ik_track = _make_tcp_ik(dyn_model)
             ctrl = BumplessGravityController(dyn_model, engage_duration=0.0)
             ik_track.reset_to_measured(q16)
-            ctrl.engage(q16, np.zeros(16))
+            ctrl.engage(q16, np.zeros(dyn_model.nv))
 
             total_s = float(inp["seconds"]) + float(inp.get("hold_s", 1.0))
             steps = int(total_s / dt)
@@ -217,7 +230,7 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
                     el = np.linalg.norm(data.site("left_tcp_site").xpos - t_l.translation()) * 1000.0
                     er = np.linalg.norm(data.site("right_tcp_site").xpos - t_r.translation()) * 1000.0
                     peak_mm = max(peak_mm, float(el), float(er))
-            passed = peak_mm < 2.0 and max_ncon == 0
+            passed = peak_mm < 1.0 and max_ncon == 0
             results.append(
                 {
                     "id": cid,
@@ -244,30 +257,58 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
             data.qpos[:] = q16
             mujoco.mj_forward(sim_model, data)
             ctrl = BumplessGravityController(dyn_model, engage_duration=0.25)
-            ctrl.engage(q16, np.zeros(16))
+            ctrl.engage(q16, np.zeros(dyn_model.nv))
 
-            hold_s = 1.5
+            hold_s = 4.0
             total_s = float(traj.t[-1]) + hold_s
+            total_steps = int(round(total_s / dt))
             max_ncon = 0
-            for k in range(int(total_s / dt)):
+            max_limit_excursion = 0.0
+            tail_samples: list[tuple[float, float, float]] = []  # (pos_mm, ori_rad, speed_rad_s)
+            sample_stride = int(round(0.1 / dt))  # 100 ms control sampling
+
+            for k in range(total_steps):
                 q_ref, dq_ref = traj.sample(k * dt)
                 data.ctrl[:] = ctrl.step(dt, data.qpos.copy(), data.qvel.copy(), q_ref, dq_ref)
                 mujoco.mj_step(sim_model, data)
                 max_ncon = max(max_ncon, int(data.ncon))
+                for jid in arm_jids:
+                    adr = int(dyn_model.jnt_qposadr[jid])
+                    lo, hi = dyn_model.jnt_range[jid]
+                    exc = max(0.0, float(lo - data.qpos[adr]), float(data.qpos[adr] - hi))
+                    max_limit_excursion = max(max_limit_excursion, exc)
+                if k % sample_stride == 0 or k == total_steps - 1:
+                    pl_mm, ol_rad = _pose_err(_site_se3(data, "left_tcp_site"), t_l_goal)
+                    pr_mm, or_rad = _pose_err(_site_se3(data, "right_tcp_site"), t_r_goal)
+                    spd = float(np.max(np.abs(data.qvel[: dyn_model.nv])))
+                    tail_samples.append((max(pl_mm, pr_mm), max(ol_rad, or_rad), spd))
 
-            el = float(np.linalg.norm(data.site("left_tcp_site").xpos - t_l_goal.translation()) * 1000.0)
-            er = float(np.linalg.norm(data.site("right_tcp_site").xpos - t_r_goal.translation()) * 1000.0)
-            passed = el < 1.0 and er < 1.0 and max_ncon == 0
+            last3 = tail_samples[-3:]
+            tail_pos_mm = max(s[0] for s in last3)
+            tail_ori_rad = max(s[1] for s in last3)
+            tail_spd = max(s[2] for s in last3)
+            passed = (
+                tail_pos_mm < 0.4
+                and tail_ori_rad < 0.004
+                and tail_spd < 0.01
+                and max_limit_excursion <= 1e-5
+                and max_ncon == 0
+            )
             results.append(
                 {
                     "id": cid,
                     "kind": kind,
                     "passed": passed,
                     "mode": traj.mode,
-                    "left_err_mm": round(el, 3),
-                    "right_err_mm": round(er, 3),
+                    "tail_pos_mm": round(tail_pos_mm, 3),
+                    "tail_ori_rad": round(tail_ori_rad, 5),
+                    "tail_spd_rad_s": round(tail_spd, 5),
+                    "limit_exc_rad": round(max_limit_excursion, 6),
                     "ncon": max_ncon,
-                    "summary": f"mode={traj.mode} left={el:.2f}mm right={er:.2f}mm ncon={max_ncon}",
+                    "summary": (
+                        f"mode={traj.mode} tail_pos={tail_pos_mm:.3f}mm tail_ori={tail_ori_rad:.5f}rad "
+                        f"spd={tail_spd:.4f} lim_exc={max_limit_excursion:.6f} ncon={max_ncon}"
+                    ),
                 }
             )
 
@@ -286,8 +327,13 @@ def eval_all(save_report: bool = True) -> list[dict[str, object]]:
             json.dumps({"total": len(results), "passed": n_pass, "cases": results}, indent=2),
             encoding="utf-8",
         )
+    if strict and n_pass < len(results):
+        raise SystemExit(1)
     return results
 
 
 if __name__ == "__main__":
-    eval_all()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--strict", action="store_true", help="Exit 1 if any case fails.")
+    args = parser.parse_args()
+    eval_all(strict=args.strict)
