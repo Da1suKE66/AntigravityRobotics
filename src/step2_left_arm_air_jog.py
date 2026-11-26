@@ -624,6 +624,25 @@ def _safe_read_tau(arm_dev: Any) -> np.ndarray | None:
     return arr if arr.ndim == 1 and arr.size > 0 else None
 
 
+def _check_over_temperature(arm_dev: Any, max_temp_c: float = 65.0) -> str | None:
+    """Check each motor temperature independently so one None/NaN channel never masks another's over-temp."""
+    if not hasattr(arm_dev, "get_motor_temperatures"):
+        return None
+    temps = arm_dev.get_motor_temperatures()
+    if temps is None:
+        return None
+    for idx, raw_t in enumerate(temps):
+        if raw_t is None:
+            continue
+        try:
+            t_val = float(raw_t)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(t_val) and t_val >= max_temp_c:
+            return f"Motor J{idx + 1} over-temperature {t_val:.1f}C >= {max_temp_c:.1f}C"
+    return None
+
+
 def _check_arm_fault(
     api: Any,
     arm_dev: Any,
@@ -678,10 +697,9 @@ def _check_arm_fault(
     if errs and any(e is not None for e in errs):
         return f"Motor error codes: {errs}", q_now, err, max_tau, last_fresh_t
 
-    if hasattr(arm_dev, "get_motor_temperatures"):
-        temps = arm_dev.get_motor_temperatures()
-        if temps is not None and len(temps) > 0 and max(float(t) for t in temps) >= max_temp_c:
-            return f"Motor over-temperature >= {max_temp_c:.1f}C: {[round(float(t), 1) for t in temps]}", q_now, err, max_tau, last_fresh_t
+    temp_err = _check_over_temperature(arm_dev, max_temp_c=max_temp_c)
+    if temp_err is not None:
+        return temp_err, q_now, err, max_tau, last_fresh_t
 
     if err > max_tracking_err_rad:
         return f"Tracking error {err:.4f} rad > {max_tracking_err_rad} rad", q_now, err, max_tau, last_fresh_t

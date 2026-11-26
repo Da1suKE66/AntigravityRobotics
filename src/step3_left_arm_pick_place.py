@@ -31,6 +31,7 @@ from step2_left_arm_air_jog import (
     Q_LEFT_READY,
     SafeArmSendGate,
     _check_arm_fault,
+    _check_over_temperature,
     _install_parking_stop_tracker,
     _install_safe_send_gate,
     _is_parking_stop_active,
@@ -355,9 +356,16 @@ def plan_and_verify_step3(
                     g2 = verify_model.geom(con.geom2).name or f"g{con.geom2}"
                     b1 = verify_model.body(verify_model.geom_bodyid[con.geom1]).name
                     b2 = verify_model.body(verify_model.geom_bodyid[con.geom2]).name
-                    # Ignore contact between carried_object_col and the left gripper holding it
-                    if (g1 == "carried_object_col" and b2.startswith("left_")) or (
-                        g2 == "carried_object_col" and b1.startswith("left_")
+                    # Ignore contact between carried_object_col and the left gripper jaws holding it,
+                    # but DO catch collisions with left_link_1..5, wrist D405 bracket, right arm, or table!
+                    carried_gripper_bodies = {
+                        "left_grip_link_1",
+                        "left_grip_link_2",
+                        "left_gr100_base_link",
+                        "left_link_6",
+                    }
+                    if (g1 == "carried_object_col" and b2 in carried_gripper_bodies) or (
+                        g2 == "carried_object_col" and b1 in carried_gripper_bodies
                     ):
                         continue
                     if b1.startswith("left_") or b2.startswith("left_") or g1 == "carried_object_col" or g2 == "carried_object_col":
@@ -543,10 +551,10 @@ def execute_step3_pick_place(
             if init_errs and any(e is not None for e in init_errs):
                 aborted_reason = f"Pre-start motor error codes: {init_errs}"
 
-        if aborted_reason is None and hasattr(arm_dev, "get_motor_temperatures"):
-            temps = arm_dev.get_motor_temperatures()
-            if temps is not None and len(temps) > 0 and max(float(t) for t in temps) >= 65.0:
-                aborted_reason = f"Pre-start motor over-temperature >= 65.0C: {[round(float(t), 1) for t in temps]}"
+        if aborted_reason is None:
+            temp_err = _check_over_temperature(arm_dev, max_temp_c=65.0)
+            if temp_err is not None:
+                aborted_reason = f"Pre-start {temp_err}"
 
         q_live = _safe_read_q(arm_dev, True)
         if q_live is None:
@@ -560,12 +568,13 @@ def execute_step3_pick_place(
                 aborted_reason = "Live arm moved since planning."
 
         last_fresh_t = clock_fn()
+        hand_last_fresh_t = clock_fn()
         hand_last_fresh_q: float | None = None
         hand_fresh_in_stage = 0
 
         def _hold_and_stream(traj: np.ndarray, grip_pos: float | None = None) -> None:
             nonlocal aborted_reason, last_q, last_fresh_t, max_err_seen, max_tau_seen
-            nonlocal high_tau_streak, hand_last_fresh_q, hand_fresh_in_stage
+            nonlocal high_tau_streak, hand_last_fresh_t, hand_last_fresh_q, hand_fresh_in_stage
             if aborted_reason is not None:
                 return
             hand_fresh_in_stage = 0
@@ -597,7 +606,14 @@ def execute_step3_pick_place(
                     fresh_gq = _read_fresh_gripper_q(hand_dev)
                     if fresh_gq is not None:
                         hand_last_fresh_q = fresh_gq
+                        hand_last_fresh_t = now_t
                         hand_fresh_in_stage += 1
+                    elif (now_t - hand_last_fresh_t) > stale_timeout_s:
+                        aborted_reason = (
+                            f"Gripper feedback frozen/stale for {now_t - hand_last_fresh_t:.3f}s "
+                            f"(> {stale_timeout_s:.3f}s)"
+                        )
+                        return
 
                 sleep_s = t_seg + (k + 1) * dt - clock_fn()
                 if sleep_s > 0:
@@ -606,6 +622,7 @@ def execute_step3_pick_place(
         if aborted_reason is None:
             # Consume initial open gripper reading before moving
             _read_fresh_gripper_q(hand_dev)
+            hand_last_fresh_t = clock_fn()
             if send_gate is not None:
                 send_gate.allow_execution()
             arm_dev.start()
@@ -613,11 +630,23 @@ def execute_step3_pick_place(
                 hand_dev.set_pos_torque(2.5)
             hand_dev.motor_command(CommandType.POSITION, [GRIP_OPEN_RAD])
 
-            # 1) Unfold -> Hover -> Descend (open jaws)
+            # 1) Unfold -> Hover (verify gripper is actually OPEN before descending onto tissue pack!)
             _hold_and_stream(np.repeat(q_live[None, :], 25, axis=0), GRIP_OPEN_RAD)
             _hold_and_stream(segments["unfold"], GRIP_OPEN_RAD)
             _hold_and_stream(segments["to_hover"], GRIP_OPEN_RAD)
-            _hold_and_stream(segments["descend_grasp"], GRIP_OPEN_RAD)
+
+            if aborted_reason is None:
+                if hand_fresh_in_stage == 0 or hand_last_fresh_q is None:
+                    aborted_reason = "No fresh gripper telemetry at hover before descend; refusing descend."
+                elif hand_last_fresh_q > 0.15:
+                    aborted_reason = (
+                        f"Gripper not open at hover before descend (q_grip={hand_last_fresh_q:.3f} rad > 0.15); "
+                        "refusing descend."
+                    )
+
+            # 2) Descend to grasp pose (open jaws)
+            if aborted_reason is None:
+                _hold_and_stream(segments["descend_grasp"], GRIP_OPEN_RAD)
 
             if aborted_reason is None:
                 if hand_fresh_in_stage == 0 or hand_last_fresh_q is None:
@@ -627,14 +656,18 @@ def execute_step3_pick_place(
                     if q_grip_before_close > 0.15:
                         aborted_reason = f"Gripper not open before close (q_grip={q_grip_before_close:.3f} rad > 0.15)."
 
-            # 2) Close gripper while holding grasp pose (1.2 s) & require FRESH closure confirmation
+            # 3) Close gripper while holding grasp pose (1.2 s) & require continuous FRESH closure confirmation
             if aborted_reason is None:
                 q_grasp_hold = np.repeat(segments["descend_grasp"][-1][None, :], 120, axis=0)
                 _hold_and_stream(q_grasp_hold, GRIP_CLOSE_RAD)
 
             if aborted_reason is None:
-                if hand_fresh_in_stage == 0 or hand_last_fresh_q is None:
-                    aborted_reason = "Gripper feedback lost during close (no fresh telemetry after close command); aborting lift."
+                if (
+                    hand_fresh_in_stage == 0
+                    or hand_last_fresh_q is None
+                    or (clock_fn() - hand_last_fresh_t) > stale_timeout_s
+                ):
+                    aborted_reason = "Gripper feedback lost during close (stale telemetry); aborting lift."
                 else:
                     q_grip_after_close = hand_last_fresh_q
                     if (q_grip_after_close - q_grip_before_close) < 0.05:
@@ -648,23 +681,32 @@ def execute_step3_pick_place(
                     else:
                         grasp_verified = True
 
-            # 3) Lift -> Move to Place -> Open & require FRESH open confirmation -> Retreat -> Return to Rest
+            # 4) Lift -> Move to Place -> Open & require FRESH open delta confirmation -> Retreat -> Return to Rest
             if aborted_reason is None and grasp_verified:
                 _hold_and_stream(segments["lift"], GRIP_CLOSE_RAD)
                 _hold_and_stream(segments["to_place_hover"], GRIP_CLOSE_RAD)
                 _hold_and_stream(segments["descend_place"], GRIP_CLOSE_RAD)
 
+                q_grip_before_open = hand_last_fresh_q
                 if aborted_reason is None:
                     q_place_hold = np.repeat(segments["descend_place"][-1][None, :], 100, axis=0)
                     _hold_and_stream(q_place_hold, GRIP_OPEN_RAD)
 
                 if aborted_reason is None:
-                    if hand_fresh_in_stage == 0 or hand_last_fresh_q is None:
+                    if (
+                        hand_fresh_in_stage == 0
+                        or hand_last_fresh_q is None
+                        or (clock_fn() - hand_last_fresh_t) > stale_timeout_s
+                    ):
                         aborted_reason = "Gripper feedback lost during open at place pose; refusing retreat."
                     else:
                         q_grip_after_open = hand_last_fresh_q
-                        if q_grip_after_open > 0.15:
-                            aborted_reason = f"Gripper stuck/not open at place pose (q_grip={q_grip_after_open:.3f} rad > 0.15); refusing retreat."
+                        open_delta = (q_grip_before_open - q_grip_after_open) if q_grip_before_open is not None else 0.0
+                        if q_grip_after_open > 0.15 or open_delta < 0.03:
+                            aborted_reason = (
+                                f"Gripper stuck/did not open at place pose "
+                                f"({q_grip_before_open:.3f} -> {q_grip_after_open:.3f} rad); refusing retreat."
+                            )
                         else:
                             release_verified = True
 

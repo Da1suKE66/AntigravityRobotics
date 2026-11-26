@@ -18,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import mujoco
 import numpy as np
 from hex_device import Arm
 from hex_device.motor_base import Timestamp
@@ -608,7 +609,8 @@ def test_step3_frozen_gripper_after_close_never_verifies_grasp():
     )
     assert res["completed"] is False
     assert res["grasp_verified"] is False
-    assert "feedback lost" in (res["aborted_reason"] or "").lower()
+    reason = (res["aborted_reason"] or "").lower()
+    assert "frozen/stale" in reason or "feedback lost" in reason, res
     print("PASS: test_step3_frozen_gripper_after_close_never_verifies_grasp")
 
 
@@ -669,6 +671,142 @@ def test_step3_overtemp_or_sustained_torque_aborts():
     assert "over-temperature" in (res["aborted_reason"] or "").lower()
     assert arm.started is False
     print("PASS: test_step3_overtemp_or_sustained_torque_aborts")
+
+
+def test_step3_closed_gripper_aborts_before_descend_grasp():
+    """Comment #1 (P1): Gripper stuck closed (0.50 rad) MUST abort at hover BEFORE descend_grasp."""
+    q0 = Q_LEFT_READY.copy()
+    q_descend = q0 + np.array([0.0, 0.20, 0.0, 0.0, 0.0, 0.0])
+    segs = _make_step3_dummy_segments(q0)
+    segs["descend_grasp"] = np.linspace(q0, q_descend, 10)
+
+    arm = _FakeArm(q0)
+    hand = _FakeHand(initial_q=0.50, stuck_q=0.50)
+    # Override motor_command so hand stays stuck at 0.50 from cmd 1
+    hand.motor_command = lambda cmd_type, values: hand.cmds.append(float(values[0]))
+    api = _FakeStep3API(arm, hand)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(segs, api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock)
+    assert res["completed"] is False
+    assert "before descend" in (res["aborted_reason"] or "").lower(), res
+    # Arm must NOT have descended toward q_descend!
+    assert float(np.max(np.abs(arm.q - q0))) < 1e-4, f"Arm descended despite closed gripper: {arm.q}"
+    print("PASS: test_step3_closed_gripper_aborts_before_descend_grasp")
+
+
+def test_step3_unopened_gripper_at_place_aborts_even_below_015():
+    """Comment #2 (P1): Gripper staying at 0.12 rad (open_delta=0) at place MUST NOT report release_verified."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    hand = _FakeHand(GRIP_OPEN_RAD)
+    closed_once = [False]
+
+    def _mc_stuck_at_012(cmd_type, values):
+        target = float(values[0])
+        hand.cmds.append(target)
+        if target > 0.3:
+            closed_once[0] = True
+            hand.q = 0.12  # closes from 0.02 -> 0.12 (valid grasp delta +0.10)
+        elif closed_once[0]:
+            hand.q = 0.12  # refuses to open back to 0.02 at place!
+        else:
+            hand.q = target
+
+    hand.motor_command = _mc_stuck_at_012
+    api = _FakeStep3API(arm, hand)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert res["release_verified"] is False
+    assert "did not open" in (res["aborted_reason"] or "").lower(), res
+    print("PASS: test_step3_unopened_gripper_at_place_aborts_even_below_015")
+
+
+def test_step3_single_frame_at_close_start_then_freeze_aborts():
+    """Comment #3 (P1): One fresh gripper frame at close tick 0 followed by freeze > 0.15s MUST abort."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    hand = _FakeHand(GRIP_OPEN_RAD)
+    close_ticks = [0]
+
+    def _mc_one_frame_then_freeze(cmd_type, values):
+        target = float(values[0])
+        hand.cmds.append(target)
+        if target > 0.3:
+            close_ticks[0] += 1
+            if close_ticks[0] == 1:
+                hand.q = 0.25
+                hand._has_new = True
+            else:
+                hand._has_new = False
+        else:
+            hand.q = target
+
+    hand.motor_command = _mc_one_frame_then_freeze
+    api = _FakeStep3API(arm, hand)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), stale_timeout_s=0.15, api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert res["grasp_verified"] is False
+    assert "frozen/stale" in (res["aborted_reason"] or "").lower(), res
+    print("PASS: test_step3_single_frame_at_close_start_then_freeze_aborts")
+
+
+def test_step3_nan_or_none_temp_channel_does_not_mask_overtemp():
+    """Comment #4 (P1): NaN/None on J1/J3 must NOT mask 70.0C over-temperature on J2."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    arm.get_motor_temperatures = lambda: [float("nan"), 70.0, None, 40.0, 40.0, 40.0]
+    hand = _FakeHand(GRIP_OPEN_RAD)
+    api = _FakeStep3API(arm, hand)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert "j2 over-temperature 70.0c" in (res["aborted_reason"] or "").lower(), res
+    assert arm.started is False
+    print("PASS: test_step3_nan_or_none_temp_channel_does_not_mask_overtemp")
+
+
+def test_step3_carried_object_wrist_and_forearm_collision_is_caught():
+    """Comment #5 (P2): carried_object_col contact with left_link_5 or left_wrist_d405_link is NOT ignored."""
+    from step3_left_arm_pick_place import build_step3_verification_model
+
+    _, _, perception = _load_saved_data()
+    unoccluded = dict(perception)
+    unoccluded["object_footprint_m"] = [0.176, 0.078]
+    unoccluded["object_center_wc_m"] = [0.4056, 0.0506, 0.0898]
+    unoccluded["object_z_top_wc_m"] = 0.095
+    m, _ = build_step3_verification_model(unoccluded["z_table_wc_m"], unoccluded)
+    d = mujoco.MjData(m)
+
+    # Place carried_object_col directly on top of left_wrist_d405_link -> MUST produce contact
+    wrist_bid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "left_wrist_d405_link")
+    car_mocap = int(m.body_mocapid[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "carried_object_mocap")])
+    mujoco.mj_forward(m, d)
+    d.mocap_pos[car_mocap] = d.xpos[wrist_bid].copy()
+    mujoco.mj_forward(m, d)
+
+    wrist_hits = [
+        (m.geom(c.geom1).name, m.geom(c.geom2).name)
+        for c in d.contact[: d.ncon]
+        if c.dist < -1e-4
+        and (
+            (m.geom(c.geom1).name == "carried_object_col" and m.body(m.geom_bodyid[c.geom2]).name == "left_wrist_d405_link")
+            or (m.geom(c.geom2).name == "carried_object_col" and m.body(m.geom_bodyid[c.geom1]).name == "left_wrist_d405_link")
+        )
+    ]
+    assert len(wrist_hits) > 0, "Expected carried_object_col vs left_wrist_d405_link contact!"
+    print("PASS: test_step3_carried_object_wrist_and_forearm_collision_is_caught")
 
 
 def test_passive_reader_matches_real_hex_device_arm_firefly_zero_offset():
@@ -1080,4 +1218,9 @@ if __name__ == "__main__":
     test_step3_stuck_gripper_at_place_or_unreached_rest_never_completes()
     test_step3_carried_object_collision_during_lift_is_detected()
     test_step3_overtemp_or_sustained_torque_aborts()
-    print("\nALL 27 OFFLINE SAFETY TESTS PASSED!")
+    test_step3_closed_gripper_aborts_before_descend_grasp()
+    test_step3_unopened_gripper_at_place_aborts_even_below_015()
+    test_step3_single_frame_at_close_start_then_freeze_aborts()
+    test_step3_nan_or_none_temp_channel_does_not_mask_overtemp()
+    test_step3_carried_object_wrist_and_forearm_collision_is_caught()
+    print("\nALL 32 OFFLINE SAFETY TESTS PASSED!")
