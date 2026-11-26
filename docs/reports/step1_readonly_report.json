@@ -1,0 +1,527 @@
+{
+  "timestamp": "2026-11-26 00:44:27",
+  "se3_checks": {
+    "T_arm1_link6_from_left_d405": {
+      "ortho_err": 1.5014901571318902e-09,
+      "det": 0.9999999995960536
+    },
+    "T_arm2_link6_from_right_d405": {
+      "ortho_err": 1.7384661436657215e-09,
+      "det": 0.9999999996577553
+    },
+    "T_arm1_base_from_top_d435": {
+      "ortho_err": 1.7799086031601098e-09,
+      "det": 1.0000000001065283
+    },
+    "T_arm2_base_from_top_d435": {
+      "ortho_err": 1.2583581459400927e-09,
+      "det": 1.0000000004845957
+    },
+    "T_arm1_base_from_arm2_base": {
+      "ortho_err": 1.554059646366527e-09,
+      "det": 0.999999999688235
+    }
+  },
+  "left_arm": {
+    "name": "left_arm",
+    "ws_url": "ws://[fe80::cc44:e4ff:fecf:de48%enx00e04c680044]:8439",
+    "connected": true,
+    "arm": {
+      "arm_name": "firefly_y6_40",
+      "motor_count": 6,
+      "joint_names": [
+        "joint_1",
+        "joint_2",
+        "joint_3",
+        "joint_4",
+        "joint_5",
+        "joint_6"
+      ],
+      "positions_rad": [
+        -0.006846701823905499,
+        -1.5744623582611827,
+        3.145433312333272,
+        0.012829826107904767,
+        0.0004892559817611821,
+        0.0030209234930177577
+      ],
+      "velocities_rad_s": [
+        0.0,
+        0.0,
+        0.0,
+        -2.62154919804675e-05,
+        0.0,
+        0.000574868288428823
+      ],
+      "torques_nm": [
+        -0.039487502574920647,
+        0.8292375540733338,
+        -0.789750051498413,
+        -0.039487502574920647,
+        -0.017316001892089844,
+        0.0
+      ],
+      "temperatures_c": [
+        38.20000076293945,
+        35.400001525878906,
+        36.5,
+        39.10000228881836,
+        40.70000076293945,
+        38.5
+      ],
+      "voltages_v": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "error_codes": [
+        "None",
+        "None",
+        "None",
+        "None",
+        "None",
+        "None"
+      ],
+      "warnings": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "parking_stop": ""
+    },
+    "gripper": null,
+    "error": null
+  },
+  "right_arm": {
+    "name": "right_arm",
+    "ws_url": "ws://[fe80::cc44:e4ff:fecf:de48%enx00e04c680044]:9439",
+    "connected": true,
+    "arm": {
+      "arm_name": "firefly_y6_40",
+      "motor_count": 6,
+      "joint_names": [
+        "joint_1",
+        "joint_2",
+        "joint_3",
+        "joint_4",
+        "joint_5",
+        "joint_6"
+      ],
+      "positions_rad": [
+        0.002686107076257153,
+        -1.569590485498467,
+        3.1437255602842584,
+        0.019612897404336586,
+        0.00658023828990866,
+        -0.012374611031648563
+      ],
+      "velocities_rad_s": [
+        2.247042169754357e-05,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "torques_nm": [
+        -0.07897500514984129,
+        0.0,
+        -0.3948750257492065,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "temperatures_c": [
+        38.20000076293945,
+        38.900001525878906,
+        36.900001525878906,
+        38.900001525878906,
+        39.10000228881836,
+        41.0
+      ],
+      "voltages_v": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "error_codes": [
+        "None",
+        "None",
+        "None",
+        "None",
+        "None",
+        "None"
+      ],
+      "warnings": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "parking_stop": ""
+    },
+    "gripper": null,
+    "error": null
+  },
+  "mujoco_fk_check": {
+    "model_path": "/home/lakeside/Documents/Antigravity Robotics/model/firefly_dual.xml",
+    "limit_checks": {
+      "left": [
+        {
+          "joint": "left_joint_1",
+          "q_rad": -0.006847,
+          "range_rad": [
+            -2.86234,
+            2.86234
+          ],
+          "in_bounds": true,
+          "margin_rad": 2.855493
+        },
+        {
+          "joint": "left_joint_2",
+          "q_rad": -1.574462,
+          "range_rad": [
+            -1.5708,
+            2.0944
+          ],
+          "in_bounds": false,
+          "margin_rad": -0.003662
+        },
+        {
+          "joint": "left_joint_3",
+          "q_rad": 3.145433,
+          "range_rad": [
+            0.0,
+            3.14159
+          ],
+          "in_bounds": false,
+          "margin_rad": -0.003843
+        },
+        {
+          "joint": "left_joint_4",
+          "q_rad": 0.01283,
+          "range_rad": [
+            -1.5708,
+            1.5708
+          ],
+          "in_bounds": true,
+          "margin_rad": 1.55797
+        },
+        {
+          "joint": "left_joint_5",
+          "q_rad": 0.000489,
+          "range_rad": [
+            -1.5708,
+            1.5708
+          ],
+          "in_bounds": true,
+          "margin_rad": 1.570311
+        },
+        {
+          "joint": "left_joint_6",
+          "q_rad": 0.003021,
+          "range_rad": [
+            -2.96706,
+            2.96706
+          ],
+          "in_bounds": true,
+          "margin_rad": 2.964039
+        }
+      ],
+      "right": [
+        {
+          "joint": "right_joint_1",
+          "q_rad": 0.002686,
+          "range_rad": [
+            -2.86234,
+            2.86234
+          ],
+          "in_bounds": true,
+          "margin_rad": 2.859654
+        },
+        {
+          "joint": "right_joint_2",
+          "q_rad": -1.56959,
+          "range_rad": [
+            -1.5708,
+            2.0944
+          ],
+          "in_bounds": true,
+          "margin_rad": 0.00121
+        },
+        {
+          "joint": "right_joint_3",
+          "q_rad": 3.143726,
+          "range_rad": [
+            0.0,
+            3.14159
+          ],
+          "in_bounds": false,
+          "margin_rad": -0.002136
+        },
+        {
+          "joint": "right_joint_4",
+          "q_rad": 0.019613,
+          "range_rad": [
+            -1.5708,
+            1.5708
+          ],
+          "in_bounds": true,
+          "margin_rad": 1.551187
+        },
+        {
+          "joint": "right_joint_5",
+          "q_rad": 0.00658,
+          "range_rad": [
+            -1.5708,
+            1.5708
+          ],
+          "in_bounds": true,
+          "margin_rad": 1.56422
+        },
+        {
+          "joint": "right_joint_6",
+          "q_rad": -0.012375,
+          "range_rad": [
+            -2.96706,
+            2.96706
+          ],
+          "in_bounds": true,
+          "margin_rad": 2.954685
+        }
+      ]
+    },
+    "all_in_bounds": false,
+    "fk": {
+      "left_tcp_in_workcell": {
+        "pos_m": [
+          0.32889,
+          0.34826,
+          0.27897
+        ],
+        "z_axis": [
+          0.9999,
+          -0.00636,
+          -0.013
+        ]
+      },
+      "left_tcp_in_arm1_base": {
+        "pos_m": [
+          0.26839,
+          -0.00174,
+          0.18397
+        ],
+        "z_axis": [
+          0.9999,
+          -0.00636,
+          -0.013
+        ]
+      },
+      "right_tcp_in_workcell": {
+        "pos_m": [
+          0.32904,
+          -0.34794,
+          0.27682
+        ],
+        "z_axis": [
+          0.99969,
+          0.00927,
+          -0.02295
+        ]
+      },
+      "right_tcp_in_arm2_base": {
+        "pos_m": [
+          0.26854,
+          0.00206,
+          0.18182
+        ],
+        "z_axis": [
+          0.99969,
+          0.00927,
+          -0.02295
+        ]
+      }
+    },
+    "penetrations_gt_0p1mm": [
+      {
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.319
+      },
+      {
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.279
+      },
+      {
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.142
+      },
+      {
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.306
+      },
+      {
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.253
+      },
+      {
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.714
+      },
+      {
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.721
+      },
+      {
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "dist_mm": -1.183
+      },
+      {
+        "geom1": "right_link_1_col_0",
+        "geom2": "right_link_5_col_2",
+        "dist_mm": -1.56
+      },
+      {
+        "geom1": "right_link_1_col_0",
+        "geom2": "right_link_5_col_2",
+        "dist_mm": -1.494
+      },
+      {
+        "geom1": "right_link_1_col_0",
+        "geom2": "right_link_5_col_2",
+        "dist_mm": -1.174
+      },
+      {
+        "geom1": "right_link_1_col_0",
+        "geom2": "right_link_5_col_2",
+        "dist_mm": -1.376
+      },
+      {
+        "geom1": "right_link_2_col_0",
+        "geom2": "right_link_5_col_2",
+        "dist_mm": -1.926
+      },
+      {
+        "geom1": "right_link_2_col_0",
+        "geom2": "right_link_5_col_2",
+        "dist_mm": -1.722
+      }
+    ]
+  },
+  "realsense": {
+    "detected_devices": {
+      "262522074656": {
+        "name": "RealSense D435",
+        "usb_type": "3.2",
+        "firmware": "5.15.1.55"
+      },
+      "260422274786": {
+        "name": "RealSense D405",
+        "usb_type": "3.2",
+        "firmware": "5.15.1.55"
+      },
+      "260322270508": {
+        "name": "RealSense D405",
+        "usb_type": "2.1",
+        "firmware": "5.15.1.55"
+      }
+    },
+    "cameras": {
+      "left_d405": {
+        "serial": "260422274786",
+        "ok": true,
+        "error": null,
+        "usb_type": "3.2",
+        "shape": [
+          480,
+          640,
+          3
+        ],
+        "depth_scale_m": 9.999999747378752e-05,
+        "valid_depth_ratio": 0.5906,
+        "median_depth_m": 0.5325,
+        "sdk_intrinsics": {
+          "fx": 394.355,
+          "fy": 393.82,
+          "cx": 322.264,
+          "cy": 232.017
+        },
+        "snapshot_path": "/home/lakeside/Documents/Antigravity Robotics/docs/reports/step1_snapshots/left_d405_260422274786_rgb.png"
+      },
+      "right_d405": {
+        "serial": "260322270508",
+        "ok": true,
+        "error": null,
+        "usb_type": "2.1",
+        "shape": [
+          480,
+          640,
+          3
+        ],
+        "depth_scale_m": 9.999999747378752e-05,
+        "valid_depth_ratio": 0.4464,
+        "median_depth_m": 0.5351,
+        "sdk_intrinsics": {
+          "fx": 393.784,
+          "fy": 393.302,
+          "cx": 316.915,
+          "cy": 236.197
+        },
+        "snapshot_path": "/home/lakeside/Documents/Antigravity Robotics/docs/reports/step1_snapshots/right_d405_260322270508_rgb.png"
+      },
+      "top_d435": {
+        "serial": "262522074656",
+        "ok": true,
+        "error": null,
+        "usb_type": "3.2",
+        "shape": [
+          480,
+          640,
+          3
+        ],
+        "depth_scale_m": 0.0010000000474974513,
+        "valid_depth_ratio": 0.9811,
+        "median_depth_m": 0.697,
+        "sdk_intrinsics": {
+          "fx": 603.243,
+          "fy": 602.02,
+          "cx": 325.794,
+          "cy": 245.838
+        },
+        "snapshot_path": "/home/lakeside/Documents/Antigravity Robotics/docs/reports/step1_snapshots/top_d435_262522074656_rgb.png"
+      }
+    },
+    "table_height_estimate": {
+      "sample_count": 18970,
+      "z_arm1_base_p15_p50_p85_m": [
+        -0.0941,
+        -0.0854,
+        -0.0099
+      ],
+      "z_workcell_p15_p50_p85_m": [
+        0.0009,
+        0.0096,
+        0.0851
+      ],
+      "note": "Approximate tabletop plane from central D435 ROI (includes any objects currently on table)."
+    }
+  }
+}
