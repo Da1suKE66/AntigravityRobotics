@@ -465,15 +465,26 @@ def _is_parking_stop_active(ps_detail: Any) -> bool:
 
 
 class SafeArmSendGate:
-    """Wraps arm_dev._send_message to unconditionally block clear_parking_stop and post-stop control."""
+    """Blocks clear_parking_stop unconditionally and blocks control/motion until explicitly armed.
 
-    def __init__(self, orig_send: Callable[[Any], Any]) -> None:
+    Starts in blocked state (`execution_allowed=False`) so ZERO `clear_parking_stop`,
+    `api_control_initialize=True`, or motion commands can be sent during SDK startup
+    or device discovery, and once `latch_stop()` is called it permanently blocks again.
+    """
+
+    def __init__(self, orig_send: Callable[[Any], Any], start_blocked: bool = True) -> None:
         self._orig_send = orig_send
+        self.execution_allowed = not start_blocked
         self.latched_stopped = False
         self.blocked_messages: list[str] = []
 
+    def allow_execution(self) -> None:
+        if not self.latched_stopped:
+            self.execution_allowed = True
+
     def latch_stop(self) -> None:
         self.latched_stopped = True
+        self.execution_allowed = False
 
     def _classify_blocked(self, msg: Any) -> str | None:
         # Inspect real hex_device APIDown.arm_command nested fields
@@ -482,15 +493,19 @@ class SafeArmSendGate:
             shared = getattr(arm_cmd, "arm_shared_command", None)
             if shared is not None and getattr(shared, "clear_parking_stop", False):
                 return "clear_parking_stop"
-            if self.latched_stopped:
+            if self.latched_stopped or not self.execution_allowed:
                 excl = getattr(arm_cmd, "arm_exclusive_command", None)
                 if excl is not None and hasattr(excl, "WhichOneof"):
                     which = excl.WhichOneof("exclusive_command")
                     if which == "api_control_initialize":
                         if excl.api_control_initialize:
-                            return "post_stop_api_control_initialize_true"
+                            return (
+                                "post_stop_api_control_initialize_true"
+                                if self.latched_stopped
+                                else "pre_arm_api_control_initialize_true"
+                            )
                         return None  # Explicit stop (api_control_initialize=False) is allowed
-                return "post_stop_arm_command"
+                return "post_stop_arm_command" if self.latched_stopped else "pre_arm_arm_command"
         return None
 
     async def __call__(self, msg: Any) -> Any:
@@ -501,22 +516,32 @@ class SafeArmSendGate:
         return await self._orig_send(msg)
 
 
-def _install_safe_send_gate(arm_dev: Any) -> SafeArmSendGate | None:
+def _install_safe_send_gate(arm_dev: Any, start_blocked: bool = False) -> SafeArmSendGate | None:
     orig = getattr(arm_dev, "_send_message", None)
     if orig is None or not callable(orig):
         return None
-    gate = SafeArmSendGate(orig)
+    gate = SafeArmSendGate(orig, start_blocked=start_blocked)
     arm_dev._send_message = gate
     return gate
 
 
-def _install_parking_stop_tracker(arm_dev: Any) -> None:
-    """Wrap arm_dev._update to preserve proto3 HasField('parking_stop_detail') for E-Stop (enum=0)."""
+def _install_parking_stop_tracker(arm_dev: Any, initial_api_up: Any = None) -> None:
+    """Wrap arm_dev._update to preserve proto3 HasField('parking_stop_detail') from frame 0."""
+    if not hasattr(arm_dev, "_parking_stop_present"):
+        arm_dev._parking_stop_present = False
+    if initial_api_up is not None:
+        try:
+            if hasattr(initial_api_up, "HasField") and initial_api_up.HasField("arm_status"):
+                arm_dev._parking_stop_present = bool(
+                    initial_api_up.arm_status.HasField("parking_stop_detail")
+                )
+        except Exception:
+            pass
+    if getattr(arm_dev, "_parking_stop_tracker_installed", False):
+        return
     orig_update = getattr(arm_dev, "_update", None)
     if orig_update is None or not callable(orig_update):
         return
-    if not hasattr(arm_dev, "_parking_stop_present"):
-        arm_dev._parking_stop_present = False
 
     def _wrapped_update(api_up_data, timestamp):
         try:
@@ -529,6 +554,31 @@ def _install_parking_stop_tracker(arm_dev: Any) -> None:
         return orig_update(api_up_data, timestamp)
 
     arm_dev._update = _wrapped_update
+    arm_dev._parking_stop_tracker_installed = True
+
+
+def create_guarded_hex_device_api(**kwargs: Any) -> Any:
+    """Create a HexDeviceApi subclass whose send gate and frame-0 E-Stop tracker are active from t=0."""
+    import hex_device
+    from hex_device import HexDeviceApi
+
+    hex_device.set_log_level("WARNING")
+
+    class GuardedHexDeviceApi(HexDeviceApi):
+        def __init__(self, **inner_kwargs: Any) -> None:
+            self.send_gate = SafeArmSendGate(super()._send_down_message, start_blocked=True)
+            super().__init__(**inner_kwargs)
+
+        async def _send_down_message(self, data: Any) -> Any:
+            return await self.send_gate(data)
+
+        def _create_and_register_device(self, robot_type: Any, api_up: Any) -> Any:
+            device = super()._create_and_register_device(robot_type, api_up)
+            if device is not None:
+                _install_parking_stop_tracker(device, initial_api_up=api_up)
+            return device
+
+    return GuardedHexDeviceApi(**kwargs)
 
 
 def _safe_read_q(arm_dev: Any, pop: bool = False) -> np.ndarray | None:
@@ -628,11 +678,11 @@ def execute_left_arm_trajectory(
     old_handler = signal.signal(signal.SIGINT, _sigint_handler)
 
     if api_factory is None:
-        import hex_device
-        from hex_device import Arm, HexDeviceApi
+        from hex_device import Arm
 
-        hex_device.set_log_level("WARNING")
-        api = HexDeviceApi(ws_url=LEFT_ARM_WS_URL, control_hz=200, enable_kcp=True, local_port=0)
+        api = create_guarded_hex_device_api(
+            ws_url=LEFT_ARM_WS_URL, control_hz=200, enable_kcp=True, local_port=0
+        )
         arm_cls = Arm
     else:
         api = api_factory()
@@ -666,34 +716,54 @@ def execute_left_arm_trajectory(
         if arm_dev is None:
             raise TimeoutError("Could not connect to left arm for execution.")
 
-        # Guard outbound SDK messages and preserve proto3 E-Stop (enum=0) field presence
-        send_gate = _install_safe_send_gate(arm_dev)
+        # Reuse API-level gate (active from t=0) or install arm-level gate
+        send_gate = getattr(api, "send_gate", None)
+        if send_gate is None:
+            send_gate = _install_safe_send_gate(arm_dev, start_blocked=True)
         _install_parking_stop_tracker(arm_dev)
+
+        # Pre-start health gate on frame 0 BEFORE unlocking send_gate or calling arm_dev.start()!
+        ps_present = bool(getattr(arm_dev, "_parking_stop_present", False))
+        ps_detail = arm_dev.get_parking_stop_detail() if hasattr(arm_dev, "get_parking_stop_detail") else None
+        if ps_present or _is_parking_stop_active(ps_detail):
+            aborted_reason = f"Pre-start parking stop active (present={ps_present}): {ps_detail}"
+        else:
+            init_errs = arm_dev.get_motor_error_codes()
+            if init_errs and any(e is not None for e in init_errs):
+                aborted_reason = f"Pre-start motor error codes: {init_errs}"
 
         q_live = _safe_read_q(arm_dev, True)
         if q_live is None:
-            raise RuntimeError("Arm telemetry queue empty after initial has_new_data().")
-        last_q = q_live.copy()
-        start_diff = float(np.max(np.abs(q_live - traj[0])))
-        if start_diff > 0.05:
-            raise RuntimeError(f"Live arm moved since planning (diff={start_diff:.4f} rad > 0.05). Aborting.")
+            if aborted_reason is None:
+                raise RuntimeError("Arm telemetry queue empty after initial has_new_data().")
+            last_q = traj[0].copy()
+        else:
+            last_q = q_live.copy()
+            if aborted_reason is None:
+                start_diff = float(np.max(np.abs(q_live - traj[0])))
+                if start_diff > 0.05:
+                    aborted_reason = f"Live arm moved since planning (diff={start_diff:.4f} rad > 0.05)."
 
-        arm_dev.start()
         vel_lim = [0.6] * 6
         acc_lim = [1.2] * 6
         last_fresh_t = clock_fn()
 
-        # Brief bumpless hold at start with fault watchdog active
-        for _ in range(10):
-            now_t = clock_fn()
-            aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
-                api, arm_dev, q_live, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
-            )
-            if aborted_reason is not None:
-                break
-            arm_dev.joint_position_control(q_live.tolist(), vel_lim, acc_lim)
-            commands_sent += 1
-            sleep_fn(dt)
+        if aborted_reason is None:
+            if send_gate is not None:
+                send_gate.allow_execution()
+            arm_dev.start()
+
+            # Brief bumpless hold at start with fault watchdog active
+            for _ in range(10):
+                now_t = clock_fn()
+                aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
+                    api, arm_dev, q_live, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+                )
+                if aborted_reason is not None:
+                    break
+                arm_dev.joint_position_control(q_live.tolist(), vel_lim, acc_lim)
+                commands_sent += 1
+                sleep_fn(dt)
 
         # Trajectory streaming loop: check faults BEFORE every command
         t_start = clock_fn()

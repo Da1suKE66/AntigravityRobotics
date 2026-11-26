@@ -31,6 +31,7 @@ from step2_left_arm_air_jog import (
     Q_LEFT_READY,
     SafeArmSendGate,
     _is_parking_stop_active,
+    create_guarded_hex_device_api,
     execute_left_arm_trajectory,
     plan_and_verify_step2,
 )
@@ -490,6 +491,133 @@ def test_execute_refuses_offline_perception():
     print("PASS: test_execute_refuses_offline_perception")
 
 
+def _count_sent_arm_commands(raw_packets: list[bytes]) -> dict[str, int]:
+    counts = {
+        "clear_parking_stop": 0,
+        "api_control_init_true": 0,
+        "position_cmd": 0,
+        "other_arm_cmd": 0,
+    }
+    for raw in raw_packets:
+        down = public_api_down_pb2.APIDown()
+        down.ParseFromString(raw)
+        if not down.HasField("arm_command"):
+            continue
+        ac = down.arm_command
+        if ac.HasField("arm_shared_command") and ac.arm_shared_command.clear_parking_stop:
+            counts["clear_parking_stop"] += 1
+        elif ac.HasField("arm_exclusive_command"):
+            excl = ac.arm_exclusive_command
+            which = excl.WhichOneof("exclusive_command")
+            if which == "api_control_initialize":
+                if excl.api_control_initialize:
+                    counts["api_control_init_true"] += 1
+            elif which == "arm_api_control_command":
+                counts["position_cmd"] += 1
+            else:
+                counts["other_arm_cmd"] += 1
+    return counts
+
+
+def _make_firefly_api_up(q_rad: np.ndarray, parking_cat: int | None = None, reason: str = ""):
+    up = public_api_up_pb2.APIUp()
+    up.robot_type = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
+    up.protocol_major_version = 1
+    up.protocol_minor_version = 0
+    up.session_id = 1
+    up.arm_status.calibrated = True
+    if parking_cat is not None:
+        up.arm_status.parking_stop_detail.category = parking_cat
+        up.arm_status.parking_stop_detail.reason = reason
+    for q in q_rad:
+        m = up.arm_status.motor_status.add()
+        m.pulse_per_rotation = 65535
+        m.position = int(round(float(q) / (2.0 * np.pi) * 65535))
+        m.torque = 0.0
+    return up
+
+
+def _feed_api_up_threadsafe(api, up) -> None:
+    import time as _time
+
+    loop = getattr(api, "_HexDeviceApi__loop", None)
+    deadline = _time.monotonic() + 2.0
+    while (loop is None or not loop.is_running()) and _time.monotonic() < deadline:
+        _time.sleep(0.005)
+        loop = getattr(api, "_HexDeviceApi__loop", None)
+    assert loop is not None and loop.is_running(), "HexDeviceApi event loop did not start"
+    loop.call_soon_threadsafe(api._process_api_up, up)
+
+
+def test_preexisting_estop_frame0_sends_zero_everything_in_real_sdk_loop():
+    """Audit3 #1: Pre-existing E-Stop (enum=0, reason='') on frame 0 + disconnect -> 0 clear, 0 init, 0 pos."""
+    import time as _time
+
+    sent_raw: list[bytes] = []
+
+    def _factory():
+        api = create_guarded_hex_device_api(
+            ws_url=None, control_hz=200, enable_kcp=False, send_down_callback=sent_raw.append
+        )
+        # Inject frame 0 with E-Stop (enum=0, empty reason), then NO further frames (disconnect)
+        frame0 = _make_firefly_api_up(
+            Q_LEFT_READY,
+            parking_cat=public_api_types_pb2.ParkingStopCategory.PscEmergencyStopButton,
+            reason="",
+        )
+        _feed_api_up_threadsafe(api, frame0)
+        _time.sleep(0.08)  # Let real Arm._periodic run during discovery window
+        return api
+
+    traj = np.linspace(Q_LEFT_READY, Q_LEFT_READY + np.array([0.05, 0, 0, 0, 0, 0]), 20)
+    res = execute_left_arm_trajectory(traj, dt=0.01, api_factory=_factory)
+    counts = _count_sent_arm_commands(sent_raw)
+
+    assert res["completed"] is False
+    assert "Pre-start parking stop active" in (res["aborted_reason"] or ""), res
+    assert res["commands_sent"] == 0
+    assert counts["clear_parking_stop"] == 0, counts
+    assert counts["api_control_init_true"] == 0, counts
+    assert counts["position_cmd"] == 0, counts
+    print("PASS: test_preexisting_estop_frame0_sends_zero_everything_in_real_sdk_loop")
+
+
+def test_preexisting_comm_timeout_discovery_window_sends_zero_everything_in_real_sdk_loop():
+    """Audit3 #2: Pre-existing CommTimeout during 80 ms discovery window -> 0 clear, 0 init, 0 pos."""
+    import time as _time
+
+    sent_raw: list[bytes] = []
+    api_holder = []
+
+    def _factory():
+        api = create_guarded_hex_device_api(
+            ws_url=None, control_hz=200, enable_kcp=False, send_down_callback=sent_raw.append
+        )
+        api_holder.append(api)
+        frame0 = _make_firefly_api_up(
+            Q_LEFT_READY,
+            parking_cat=public_api_types_pb2.ParkingStopCategory.PscAPICommunicationTimeout,
+            reason="pre-existing comm timeout",
+        )
+        _feed_api_up_threadsafe(api, frame0)
+        # Wait 80 ms so real Arm._periodic fires ~16 times trying to auto-clear & auto-start!
+        _time.sleep(0.08)
+        return api
+
+    traj = np.linspace(Q_LEFT_READY, Q_LEFT_READY + np.array([0.05, 0, 0, 0, 0, 0]), 20)
+    res = execute_left_arm_trajectory(traj, dt=0.01, api_factory=_factory)
+    counts = _count_sent_arm_commands(sent_raw)
+
+    assert res["completed"] is False
+    assert "Pre-start parking stop active" in (res["aborted_reason"] or ""), res
+    assert res["commands_sent"] == 0
+    assert counts["clear_parking_stop"] == 0, counts
+    assert counts["api_control_init_true"] == 0, counts
+    assert counts["position_cmd"] == 0, counts
+    assert "clear_parking_stop" in api_holder[0].send_gate.blocked_messages
+    print("PASS: test_preexisting_comm_timeout_discovery_window_sends_zero_everything_in_real_sdk_loop")
+
+
 if __name__ == "__main__":
     test_passive_reader_sends_zero_bytes_on_comm_timeout()
     test_folded_start_pose_is_rejected_not_skipped()
@@ -504,4 +632,6 @@ if __name__ == "__main__":
     test_comm_timeout_auto_clear_blocked_by_safe_send_gate()
     test_single_frame_real_sdk_queue_pop_never_raises_and_calls_stop()
     test_execute_refuses_offline_perception()
-    print("\nALL 13 OFFLINE SAFETY TESTS PASSED!")
+    test_preexisting_estop_frame0_sends_zero_everything_in_real_sdk_loop()
+    test_preexisting_comm_timeout_discovery_window_sends_zero_everything_in_real_sdk_loop()
+    print("\nALL 15 OFFLINE SAFETY TESTS PASSED!")
