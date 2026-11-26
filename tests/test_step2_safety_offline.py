@@ -539,8 +539,10 @@ class _FakeHand:
         return self._has_new
 
     def get_motor_positions(self, pop: bool = False):
-        if pop:
+        if pop and not self.freeze_after_close_cmd:
             pass
+        elif pop:
+            self._has_new = False
         return [self.q]
 
     def set_pos_torque(self, max_torque: float):
@@ -927,6 +929,75 @@ def test_step3_missing_motor_temperature_field_in_real_sdk_blocks_startup():
     assert counts["api_control_init_true"] == 0, counts
     assert counts["position_cmd"] == 0, counts
     print("PASS: test_step3_missing_motor_temperature_field_in_real_sdk_blocks_startup")
+
+
+def test_step3_real_sdk_gripper_fifo_drain_and_zero_targets_after_055():
+    """Comment #1 (P1): Real GR100 FIFO queue drains all 9 buffered frames on tick 0, and sends 0 targets after 0.55 arrives."""
+    from hex_device import Hands
+    from hex_device.motor_base import CommandType
+
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    sent_after_bad = [0]
+    bad_injected = [False]
+
+    orig_jpc = arm.joint_position_control
+
+    def _tracked_jpc(pos, vel, acc):
+        if bad_injected[0]:
+            sent_after_bad[0] += 1
+        orig_jpc(pos, vel, acc)
+
+    arm.joint_position_control = _tracked_jpc
+
+    hand = Hands(
+        device_id=1,
+        device_type=public_api_types_pb2.SecondaryDeviceType.SdtHandGr100,
+        motor_count=1,
+        proto_version=(1, 0),
+        send_message_callback=lambda m: None,
+    )
+
+    def _push_hand(rad_val: float, ts_ns: int):
+        sec_up = public_api_types_pb2.SecondaryDeviceStatus()
+        sec_up.device_id = 1
+        sec_up.device_type = public_api_types_pb2.SecondaryDeviceType.SdtHandGr100
+        hm = sec_up.hand_status.motor_status.add()
+        hm.pulse_per_rotation = 65535
+        hm.position = int(round(rad_val / (2.0 * np.pi) * 65535))
+        hand._update_optional_data(
+            public_api_types_pb2.SecondaryDeviceType.SdtHandGr100, sec_up, Timestamp(s=1, ns=ts_ns)
+        )
+
+    # Push initial open frame so startup succeeds
+    _push_hand(GRIP_OPEN_RAD, 0)
+    orig_hmc = hand.motor_command
+    cmd_idx = [0]
+
+    def _hmc(ct, vals):
+        cmd_idx[0] += 1
+        if cmd_idx[0] < 38:
+            _push_hand(GRIP_OPEN_RAD, cmd_idx[0] * 1_000_000)
+        elif cmd_idx[0] == 38:
+            # Push 9 buffered open frames + final 0.55 rad out-of-bound frame BEFORE next tick!
+            for b in range(9):
+                _push_hand(GRIP_OPEN_RAD, (40 + b) * 1_000_000)
+            _push_hand(0.55, 50_000_000)
+            bad_injected[0] = True
+        orig_hmc(ct, vals)
+
+    hand.motor_command = _hmc
+    segs = _make_step3_dummy_segments(q0)
+    segs["descend_grasp"] = np.linspace(q0, q0 + np.array([0, 0.2, 0, 0, 0, 0]), 20)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        segs, api_factory=lambda: _FakeStep3API(arm, hand), sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert "out of stage bound mid-motion" in (res["aborted_reason"] or "").lower(), res
+    assert sent_after_bad[0] == 0, f"Sent {sent_after_bad[0]} arm targets AFTER 0.55 rad arrived!"
+    print("PASS: test_step3_real_sdk_gripper_fifo_drain_and_zero_targets_after_055")
 
 
 def test_step3_carried_object_wrist_and_forearm_collision_is_caught():
@@ -1381,4 +1452,5 @@ if __name__ == "__main__":
     test_step3_empty_close_mid_transport_aborts_immediately()
     test_step3_mid_descend_gripper_drift_above_008_aborts_immediately()
     test_step3_missing_motor_temperature_field_in_real_sdk_blocks_startup()
-    print("\nALL 37 OFFLINE SAFETY TESTS PASSED!")
+    test_step3_real_sdk_gripper_fifo_drain_and_zero_targets_after_055()
+    print("\nALL 38 OFFLINE SAFETY TESTS PASSED!")

@@ -447,20 +447,25 @@ def _find_gripper_device(api: Any) -> Any:
     return None
 
 
-def _read_fresh_gripper_q(hand_dev: Any) -> tuple[float | None, str | None]:
-    """Pop one fresh gripper position sample if available; returns (val, error_msg)."""
+def _read_fresh_gripper_q(hand_dev: Any, max_drain: int = 256) -> tuple[float | None, str | None]:
+    """Drain all queued gripper samples and return the LATEST valid position, else (None, err)."""
     if not hand_dev.has_new_data():
         return None, None
-    pos = hand_dev.get_motor_positions(True)
-    if pos is None or len(pos) == 0:
-        return None, "Empty gripper position telemetry"
-    try:
-        val = float(pos[0])
-    except (TypeError, ValueError):
-        return None, f"Non-numeric gripper position telemetry: {pos[0]!r}"
-    if not math.isfinite(val) or val < -0.1 or val > 0.7:
-        return None, f"Invalid/out-of-range gripper telemetry: {val}"
-    return val, None
+    latest_val: float | None = None
+    for _ in range(max_drain):
+        if not hand_dev.has_new_data():
+            break
+        pos = hand_dev.get_motor_positions(True)
+        if pos is None or len(pos) == 0:
+            return None, "Empty gripper position telemetry"
+        try:
+            val = float(pos[0])
+        except (TypeError, ValueError):
+            return None, f"Non-numeric gripper position telemetry: {pos[0]!r}"
+        if not math.isfinite(val) or val < -0.1 or val > 0.7:
+            return None, f"Invalid/out-of-range gripper telemetry: {val}"
+        latest_val = val
+    return latest_val, None
 
 
 def execute_step3_pick_place(
@@ -618,10 +623,8 @@ def execute_step3_pick_place(
                 if aborted_reason is not None:
                     return
 
-                tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
-                _send_arm_command(arm_dev, q_cmd, dq_cmd, tau_g, "mit_grav", kp_mit, kd_mit, vel_lim, acc_lim)
+                # Check latest gripper feedback & stage bounds BEFORE sending any arm/gripper motion command!
                 if hand_dev is not None and grip_pos is not None:
-                    hand_dev.motor_command(CommandType.POSITION, [grip_pos])
                     fresh_gq, gq_err = _read_fresh_gripper_q(hand_dev)
                     if gq_err is not None:
                         aborted_reason = gq_err
@@ -645,6 +648,11 @@ def execute_step3_pick_place(
                             f"(> {stale_timeout_s:.3f}s)"
                         )
                         return
+
+                tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
+                _send_arm_command(arm_dev, q_cmd, dq_cmd, tau_g, "mit_grav", kp_mit, kd_mit, vel_lim, acc_lim)
+                if hand_dev is not None and grip_pos is not None:
+                    hand_dev.motor_command(CommandType.POSITION, [grip_pos])
 
                 sleep_s = t_seg + (k + 1) * dt - clock_fn()
                 if sleep_s > 0:
