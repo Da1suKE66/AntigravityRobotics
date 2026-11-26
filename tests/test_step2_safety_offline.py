@@ -1086,6 +1086,72 @@ def test_step3_out_of_bound_gripper_synchronously_latches_send_gate():
     print("PASS: test_step3_out_of_bound_gripper_synchronously_latches_send_gate")
 
 
+def test_step3_last_frame_retreat_out_of_bounds_skips_return_and_preserves_reason():
+    """Out-of-bounds gripper frame on LAST tick of retreat_place skips return_ready/rest & preserves reason."""
+    from hex_device import Hands
+    from step3_left_arm_pick_place import _install_gripper_bound_gate
+
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    gate = SafeArmSendGate(lambda m: None, start_blocked=False)
+    hand = Hands(
+        device_id=1,
+        device_type=public_api_types_pb2.SecondaryDeviceType.SdtHandGr100,
+        motor_count=1,
+        proto_version=(1, 0),
+        send_message_callback=gate,
+    )
+    _install_gripper_bound_gate(hand, gate)
+
+    def _push_hand(rad_val: float, ts_ns: int):
+        sec_up = public_api_types_pb2.SecondaryDeviceStatus()
+        sec_up.device_id = 1
+        sec_up.device_type = public_api_types_pb2.SecondaryDeviceType.SdtHandGr100
+        hm = sec_up.hand_status.motor_status.add()
+        hm.pulse_per_rotation = 65535
+        hm.position = int(round(rad_val / (2.0 * np.pi) * 65535))
+        hand._update_optional_data(
+            public_api_types_pb2.SecondaryDeviceType.SdtHandGr100, sec_up, Timestamp(s=1, ns=ts_ns)
+        )
+
+    _push_hand(GRIP_OPEN_RAD, 0)
+    # Count arm commands per stage: 25+5+5+5 (to close) + 120 (close) + 5+5+5 (to open) + 100 (open) + 5 (retreat) = 280
+    orig_hmc = hand.motor_command
+    cmd_idx = [0]
+
+    def _hmc(ct, vals):
+        cmd_idx[0] += 1
+        target = float(vals[0])
+        if cmd_idx[0] == 280:
+            # Last tick of retreat_place: inject 0.12 rad (> 0.08) AFTER motor_command!
+            _push_hand(0.12, cmd_idx[0] * 1_000_000)
+        elif target > 0.3:
+            _push_hand(0.28, cmd_idx[0] * 1_000_000)
+        else:
+            _push_hand(GRIP_OPEN_RAD, cmd_idx[0] * 1_000_000)
+        orig_hmc(ct, vals)
+
+    hand.motor_command = _hmc
+
+    class _GatedFakeAPI(_FakeStep3API):
+        def __init__(self, a, h):
+            super().__init__(a, h)
+            self.send_gate = gate
+
+    clock, sleep = _make_sim_clock()
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0),
+        api_factory=lambda: _GatedFakeAPI(arm, hand),
+        sleep_fn=sleep,
+        clock_fn=clock,
+    )
+    assert res["completed"] is False, res
+    assert "out of stage bound" in (res["aborted_reason"] or "").lower(), res
+    # Must NOT have run return_ready (5) + return_rest (5) after cmd 280!
+    assert arm.cmd_count == 279, f"Expected stop right after retreat_place (279 cmds), got {arm.cmd_count}!"
+    print("PASS: test_step3_last_frame_retreat_out_of_bounds_skips_return_and_preserves_reason")
+
+
 def test_step3_carried_object_wrist_and_forearm_collision_is_caught():
     """Comment #5 (P2): carried_object_col contact with left_link_5 or left_wrist_d405_link is NOT ignored."""
     from step3_left_arm_pick_place import build_step3_verification_model
@@ -1541,4 +1607,5 @@ if __name__ == "__main__":
     test_step3_real_sdk_gripper_fifo_drain_and_zero_targets_after_055()
     test_step3_transient_0081_followed_by_0079_in_same_batch_aborts()
     test_step3_out_of_bound_gripper_synchronously_latches_send_gate()
-    print("\nALL 40 OFFLINE SAFETY TESTS PASSED!")
+    test_step3_last_frame_retreat_out_of_bounds_skips_return_and_preserves_reason()
+    print("\nALL 41 OFFLINE SAFETY TESTS PASSED!")

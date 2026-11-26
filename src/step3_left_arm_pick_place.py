@@ -485,6 +485,7 @@ def _install_gripper_bound_gate(hand_dev: Any, send_gate: SafeArmSendGate | None
     if send_gate is None or getattr(hand_dev, "_grip_bound_gate_installed", False):
         return
     hand_dev._active_grip_bounds = (None, None)
+    hand_dev._latched_grip_err = None
     orig_upd = getattr(hand_dev, "_update_optional_data", None)
     if orig_upd is None or not callable(orig_upd):
         return
@@ -499,6 +500,10 @@ def _install_gripper_bound_gate(hand_dev: Any, send_gate: SafeArmSendGate | None
                     ppr = float(hm[0].pulse_per_rotation) or 1.0
                     q_val = float(hm[0].position) / ppr * (2.0 * math.pi)
                     if not math.isfinite(q_val) or (lo is not None and q_val < lo) or (hi is not None and q_val > hi):
+                        hand_dev._latched_grip_err = (
+                            f"Gripper pose out of stage bound mid-motion "
+                            f"(q_grip={q_val:.3f} rad outside [{lo}, {hi}])"
+                        )
                         send_gate.latch_stop()
         except Exception:
             pass
@@ -632,6 +637,23 @@ def execute_step3_pick_place(
         hand_last_fresh_q: float | None = None
         hand_fresh_in_stage = 0
 
+        def _sync_latched_fault() -> bool:
+            nonlocal aborted_reason, grasp_verified
+            latched_grip = getattr(hand_dev, "_latched_grip_err", None) if hand_dev is not None else None
+            if latched_grip is not None:
+                if aborted_reason is None:
+                    aborted_reason = latched_grip
+                grasp_verified = False
+                if send_gate is not None:
+                    send_gate.latch_stop()
+                return True
+            if send_gate is not None and send_gate.latched_stopped:
+                if aborted_reason is None:
+                    aborted_reason = "SendGate latched stopped"
+                grasp_verified = False
+                return True
+            return aborted_reason is not None
+
         def _hold_and_stream(
             traj: np.ndarray,
             grip_pos: float | None = None,
@@ -641,7 +663,7 @@ def execute_step3_pick_place(
             nonlocal aborted_reason, last_q, last_fresh_t, max_err_seen, max_tau_seen
             nonlocal high_tau_streak, hand_last_fresh_t, hand_last_fresh_q, hand_fresh_in_stage
             nonlocal grasp_verified
-            if aborted_reason is not None:
+            if _sync_latched_fault():
                 return
             hand_fresh_in_stage = 0
             if hand_dev is not None:
@@ -649,6 +671,8 @@ def execute_step3_pick_place(
             t_seg = clock_fn()
             try:
                 for k in range(len(traj)):
+                    if _sync_latched_fault():
+                        return
                     now_t = clock_fn()
                     q_cmd = traj[k]
                     dq_cmd = (traj[min(k + 1, len(traj) - 1)] - traj[max(k - 1, 0)]) / (
@@ -665,7 +689,7 @@ def execute_step3_pick_place(
                             aborted_reason = f"Sustained high torque >= {sustained_torque_limit_nm:.1f} Nm for {high_tau_streak} steps"
                     else:
                         high_tau_streak = 0
-                    if aborted_reason is not None:
+                    if _sync_latched_fault():
                         if send_gate is not None:
                             send_gate.latch_stop()
                         return
@@ -702,6 +726,8 @@ def execute_step3_pick_place(
                     sleep_s = t_seg + (k + 1) * dt - clock_fn()
                     if sleep_s > 0:
                         sleep_fn(sleep_s)
+                    if _sync_latched_fault():
+                        return
             finally:
                 if hand_dev is not None:
                     hand_dev._active_grip_bounds = (None, None)
@@ -803,11 +829,12 @@ def execute_step3_pick_place(
                         else:
                             release_verified = True
 
-                if aborted_reason is None and release_verified:
+                if not _sync_latched_fault() and release_verified:
                     _hold_and_stream(segments["retreat_place"], GRIP_OPEN_RAD, max_grip_rad=GRIP_MAX_OPEN_ALLOWED_RAD)
-                    _hold_and_stream(segments["return_ready"], GRIP_OPEN_RAD)
-                    _hold_and_stream(segments["return_rest"], GRIP_OPEN_RAD)
+                    _hold_and_stream(segments["return_ready"], GRIP_OPEN_RAD, max_grip_rad=GRIP_MAX_OPEN_ALLOWED_RAD)
+                    _hold_and_stream(segments["return_rest"], GRIP_OPEN_RAD, max_grip_rad=GRIP_MAX_OPEN_ALLOWED_RAD)
 
+        _sync_latched_fault()
         q_end = _safe_read_q(arm_dev, False)
         final_q = q_end if q_end is not None else last_q
         final_feedback_fresh = (clock_fn() - last_fresh_t) <= stale_timeout_s
