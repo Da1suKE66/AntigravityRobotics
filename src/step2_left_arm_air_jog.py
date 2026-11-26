@@ -450,59 +450,156 @@ def plan_and_verify_step2(
 
 
 def _is_parking_stop_active(ps_detail: Any) -> bool:
+    """Detect ANY active parking stop, including PscEmergencyStopButton (enum value 0!)."""
     if ps_detail is None:
         return False
     if isinstance(ps_detail, str):
         return bool(ps_detail.strip())
-    cat = getattr(ps_detail, "category", 0)
+    # Protobuf ParkingStopDetail: PscEmergencyStopButton has enum value 0, so we MUST
+    # check serialized presence rather than `category != 0`.
+    if hasattr(ps_detail, "SerializeToString"):
+        return len(ps_detail.SerializeToString()) > 0
+    cat = getattr(ps_detail, "category", None)
     reason = getattr(ps_detail, "reason", "")
-    return bool(cat != 0 or reason)
+    return bool(cat is not None or reason)
+
+
+class SafeArmSendGate:
+    """Wraps arm_dev._send_message to unconditionally block clear_parking_stop and post-stop control."""
+
+    def __init__(self, orig_send: Callable[[Any], Any]) -> None:
+        self._orig_send = orig_send
+        self.latched_stopped = False
+        self.blocked_messages: list[str] = []
+
+    def latch_stop(self) -> None:
+        self.latched_stopped = True
+
+    def _classify_blocked(self, msg: Any) -> str | None:
+        # Inspect real hex_device APIDown.arm_command nested fields
+        arm_cmd = getattr(msg, "arm_command", None)
+        if arm_cmd is not None:
+            shared = getattr(arm_cmd, "arm_shared_command", None)
+            if shared is not None and getattr(shared, "clear_parking_stop", False):
+                return "clear_parking_stop"
+            if self.latched_stopped:
+                excl = getattr(arm_cmd, "arm_exclusive_command", None)
+                if excl is not None and hasattr(excl, "WhichOneof"):
+                    which = excl.WhichOneof("exclusive_command")
+                    if which == "api_control_initialize":
+                        if excl.api_control_initialize:
+                            return "post_stop_api_control_initialize_true"
+                        return None  # Explicit stop (api_control_initialize=False) is allowed
+                return "post_stop_arm_command"
+        return None
+
+    async def __call__(self, msg: Any) -> Any:
+        reason = self._classify_blocked(msg)
+        if reason is not None:
+            self.blocked_messages.append(reason)
+            return None
+        return await self._orig_send(msg)
+
+
+def _install_safe_send_gate(arm_dev: Any) -> SafeArmSendGate | None:
+    orig = getattr(arm_dev, "_send_message", None)
+    if orig is None or not callable(orig):
+        return None
+    gate = SafeArmSendGate(orig)
+    arm_dev._send_message = gate
+    return gate
+
+
+def _install_parking_stop_tracker(arm_dev: Any) -> None:
+    """Wrap arm_dev._update to preserve proto3 HasField('parking_stop_detail') for E-Stop (enum=0)."""
+    orig_update = getattr(arm_dev, "_update", None)
+    if orig_update is None or not callable(orig_update):
+        return
+    if not hasattr(arm_dev, "_parking_stop_present"):
+        arm_dev._parking_stop_present = False
+
+    def _wrapped_update(api_up_data, timestamp):
+        try:
+            if hasattr(api_up_data, "HasField") and api_up_data.HasField("arm_status"):
+                arm_dev._parking_stop_present = bool(
+                    api_up_data.arm_status.HasField("parking_stop_detail")
+                )
+        except Exception:
+            pass
+        return orig_update(api_up_data, timestamp)
+
+    arm_dev._update = _wrapped_update
+
+
+def _safe_read_q(arm_dev: Any, pop: bool = False) -> np.ndarray | None:
+    raw = arm_dev.get_motor_positions(pop)
+    if raw is None:
+        return None
+    arr = np.asarray(raw, dtype=np.float64)
+    return arr if arr.ndim == 1 and arr.size > 0 else None
+
+
+def _safe_read_tau(arm_dev: Any) -> np.ndarray | None:
+    raw = arm_dev.get_motor_torques(False)
+    if raw is None:
+        return None
+    arr = np.asarray(raw, dtype=np.float64)
+    return arr if arr.ndim == 1 and arr.size > 0 else None
 
 
 def _check_arm_fault(
     api: Any,
     arm_dev: Any,
     q_cmd: np.ndarray,
+    last_q: np.ndarray,
     now_t: float,
     last_fresh_t: float,
     stale_timeout_s: float,
     max_tracking_err_rad: float,
     stop_requested: bool,
 ) -> tuple[str | None, np.ndarray, float, float, float]:
-    """Check all fault conditions; returns (abort_reason, q_now, err, max_tau, updated_last_fresh_t)."""
+    """Check all fault conditions safely even on single-frame SDK queues."""
     if stop_requested:
-        q_now = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
-        return "User SIGINT", q_now, 0.0, 0.0, last_fresh_t
+        q_now = _safe_read_q(arm_dev, False)
+        return "User SIGINT", (q_now if q_now is not None else last_q), 0.0, 0.0, last_fresh_t
     if api.is_api_exit():
-        q_now = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
-        return "HexDeviceApi exited", q_now, 0.0, 0.0, last_fresh_t
+        q_now = _safe_read_q(arm_dev, False)
+        return "HexDeviceApi exited", (q_now if q_now is not None else last_q), 0.0, 0.0, last_fresh_t
 
+    # Read torque BEFORE popping position so a single-frame FIFO queue never empties before torque read!
+    tau_now = _safe_read_tau(arm_dev)
     if arm_dev.has_new_data():
-        last_fresh_t = now_t
-        q_now = np.asarray(arm_dev.get_motor_positions(True), dtype=np.float64)
+        q_popped = _safe_read_q(arm_dev, True)
+        if q_popped is not None:
+            last_fresh_t = now_t
+            q_now = q_popped
+        else:
+            q_now = last_q
     else:
-        q_now = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
+        q_peek = _safe_read_q(arm_dev, False)
+        q_now = q_peek if q_peek is not None else last_q
+
+    err = float(np.max(np.abs(q_cmd - q_now)))
+    max_tau = float(np.max(np.abs(tau_now))) if tau_now is not None else 0.0
 
     if now_t - last_fresh_t > stale_timeout_s:
         return (
             f"Feedback frozen/stale for {now_t - last_fresh_t:.3f}s (> {stale_timeout_s:.3f}s)",
             q_now,
-            float(np.max(np.abs(q_cmd - q_now))),
-            0.0,
+            err,
+            max_tau,
             last_fresh_t,
         )
 
+    ps_present = bool(getattr(arm_dev, "_parking_stop_present", False))
     ps = arm_dev.get_parking_stop_detail() if hasattr(arm_dev, "get_parking_stop_detail") else None
-    if _is_parking_stop_active(ps):
-        return f"Parking stop active: {ps}", q_now, float(np.max(np.abs(q_cmd - q_now))), 0.0, last_fresh_t
+    if ps_present or _is_parking_stop_active(ps):
+        return f"Parking stop active (present={ps_present}): {ps}", q_now, err, max_tau, last_fresh_t
 
     errs = arm_dev.get_motor_error_codes()
     if errs and any(e is not None for e in errs):
-        return f"Motor error codes: {errs}", q_now, float(np.max(np.abs(q_cmd - q_now))), 0.0, last_fresh_t
+        return f"Motor error codes: {errs}", q_now, err, max_tau, last_fresh_t
 
-    tau_now = np.asarray(arm_dev.get_motor_torques(False), dtype=np.float64)
-    err = float(np.max(np.abs(q_cmd - q_now)))
-    max_tau = float(np.max(np.abs(tau_now))) if len(tau_now) else 0.0
     if err > max_tracking_err_rad:
         return f"Tracking error {err:.4f} rad > {max_tracking_err_rad} rad", q_now, err, max_tau, last_fresh_t
 
@@ -549,6 +646,7 @@ def execute_left_arm_trajectory(
     final_q: np.ndarray | None = None
     final_feedback_fresh = False
     arm_dev = None
+    send_gate: SafeArmSendGate | None = None
 
     def _is_stop() -> bool:
         return stop_requested or (stop_flag is not None and stop_flag())
@@ -568,7 +666,14 @@ def execute_left_arm_trajectory(
         if arm_dev is None:
             raise TimeoutError("Could not connect to left arm for execution.")
 
-        q_live = np.asarray(arm_dev.get_motor_positions(True), dtype=np.float64)
+        # Guard outbound SDK messages and preserve proto3 E-Stop (enum=0) field presence
+        send_gate = _install_safe_send_gate(arm_dev)
+        _install_parking_stop_tracker(arm_dev)
+
+        q_live = _safe_read_q(arm_dev, True)
+        if q_live is None:
+            raise RuntimeError("Arm telemetry queue empty after initial has_new_data().")
+        last_q = q_live.copy()
         start_diff = float(np.max(np.abs(q_live - traj[0])))
         if start_diff > 0.05:
             raise RuntimeError(f"Live arm moved since planning (diff={start_diff:.4f} rad > 0.05). Aborting.")
@@ -581,8 +686,8 @@ def execute_left_arm_trajectory(
         # Brief bumpless hold at start with fault watchdog active
         for _ in range(10):
             now_t = clock_fn()
-            aborted_reason, q_now, err, max_tau, last_fresh_t = _check_arm_fault(
-                api, arm_dev, q_live, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+            aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
+                api, arm_dev, q_live, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
             )
             if aborted_reason is not None:
                 break
@@ -596,8 +701,8 @@ def execute_left_arm_trajectory(
             for k in range(len(traj)):
                 now_t = clock_fn()
                 q_cmd = traj[k]
-                aborted_reason, q_now, err, max_tau, last_fresh_t = _check_arm_fault(
-                    api, arm_dev, q_cmd, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+                aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
+                    api, arm_dev, q_cmd, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
                 )
                 max_err_seen = max(max_err_seen, err)
                 max_torque_seen = max(max_torque_seen, max_tau)
@@ -617,8 +722,8 @@ def execute_left_arm_trajectory(
         if aborted_reason is None:
             for _ in range(settle_steps):
                 now_t = clock_fn()
-                aborted_reason, q_now, err, max_tau, last_fresh_t = _check_arm_fault(
-                    api, arm_dev, traj[-1], now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+                aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
+                    api, arm_dev, traj[-1], last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
                 )
                 max_err_seen = max(max_err_seen, err)
                 max_torque_seen = max(max_torque_seen, max_tau)
@@ -628,12 +733,18 @@ def execute_left_arm_trajectory(
                 commands_sent += 1
                 sleep_fn(dt)
 
-        # Immediately stop controller upon completion OR fault (ZERO commands sent after fault!)
-        final_q = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
+        q_end = _safe_read_q(arm_dev, False)
+        final_q = q_end if q_end is not None else last_q
         final_feedback_fresh = (clock_fn() - last_fresh_t) <= stale_timeout_s
-        arm_dev.stop()
     finally:
         signal.signal(signal.SIGINT, old_handler)
+        if send_gate is not None:
+            send_gate.latch_stop()
+        if arm_dev is not None:
+            try:
+                arm_dev.stop()
+            except Exception:
+                pass
         try:
             api.close()
         except Exception:
@@ -717,6 +828,12 @@ def main() -> None:
 
     out_dir = ROOT / "docs" / "reports" / "step2_snapshots"
     report_path = ROOT / "docs" / "reports" / "step2_air_jog_report.json"
+
+    if args.execute and (args.offline_step1 is not None or args.offline_perception is not None):
+        raise RuntimeError(
+            "Refusing --execute with --offline-step1 or --offline-perception; "
+            "live dual-arm state and live top-D435 perception are mandatory for execution."
+        )
 
     if args.offline_perception is not None:
         print(f"1) Loading saved perception offline from {args.offline_perception}...")

@@ -12,19 +12,25 @@ Covers all 4 audit findings:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
-from hex_device.generated import public_api_types_pb2, public_api_up_pb2
+from hex_device import Arm
+from hex_device.motor_base import Timestamp
+from hex_device.generated import public_api_down_pb2, public_api_types_pb2, public_api_up_pb2
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from readonly_ws_client import ENCODER_MIDPOINT, read_arm_passive_readonly
+from readonly_ws_client import decode_api_up_arm_telemetry, read_arm_passive_readonly
 from step2_left_arm_air_jog import (
     Q_LEFT_READY,
+    SafeArmSendGate,
+    _is_parking_stop_active,
     execute_left_arm_trajectory,
     plan_and_verify_step2,
 )
@@ -42,7 +48,7 @@ def _load_saved_data():
 def test_passive_reader_sends_zero_bytes_on_comm_timeout():
     """Audit #4: passive WS reader must transmit 0 bytes even if controller reports CommTimeout."""
     up = public_api_up_pb2.APIUp()
-    up.robot_type = 1
+    up.robot_type = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
     up.session_id = 42
     up.arm_status.api_control_initialized = False
     up.arm_status.calibrated = True
@@ -56,7 +62,7 @@ def test_passive_reader_sends_zero_bytes_on_comm_timeout():
     for q in target_rad:
         m = up.arm_status.motor_status.add()
         m.pulse_per_rotation = int(ppr)
-        m.position = int(round(q / (2.0 * np.pi) * ppr + ENCODER_MIDPOINT))
+        m.position = int(round(q / (2.0 * np.pi) * ppr))
         m.speed = 0.0
         m.torque = 0.0
         m.motor_temperature = 35.0
@@ -314,6 +320,176 @@ def test_nominal_execution_succeeds():
     print("PASS: test_nominal_execution_succeeds")
 
 
+def test_passive_reader_matches_real_hex_device_arm_firefly_zero_offset():
+    """Audit2 #1: passive reader MUST match real hex_device.Arm(RtArmFireflyY6_H2_40) to 1e-9."""
+    rt = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
+    sdk_arm = Arm(robot_type=rt, motor_count=6, proto_version=(1, 0), name="test_firefly")
+
+    up = public_api_up_pb2.APIUp()
+    up.robot_type = rt
+    up.session_id = 1
+    up.arm_status.calibrated = True
+    # Test raw count 0 (must be 0.0 rad, NOT -pi!) plus signed counts
+    raw_counts = [0, -16384, 32768, 1000, -500, 12345]
+    for cnt in raw_counts:
+        m = up.arm_status.motor_status.add()
+        m.pulse_per_rotation = 65535
+        m.position = cnt
+        m.speed = 0.0
+        m.torque = 0.0
+
+    sdk_arm._update(up, Timestamp(s=1, ns=0))
+    sdk_q = np.asarray(sdk_arm.get_motor_positions(False), dtype=np.float64)
+    passive = decode_api_up_arm_telemetry(up.SerializeToString())
+    passive_q = np.asarray(passive["positions_rad"], dtype=np.float64)
+
+    assert abs(sdk_q[0]) < 1e-12 and abs(passive_q[0]) < 1e-12, (sdk_q[0], passive_q[0])
+    np.testing.assert_allclose(passive_q, sdk_q, atol=1e-9)
+    print("PASS: test_passive_reader_matches_real_hex_device_arm_firefly_zero_offset")
+
+
+def test_estop_enum_zero_with_empty_reason_is_detected():
+    """Audit2 #2a: PscEmergencyStopButton (enum=0) with empty reason MUST abort immediately."""
+    rt = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
+    ps = public_api_types_pb2.ParkingStopDetail()
+    ps.category = public_api_types_pb2.ParkingStopCategory.PscEmergencyStopButton
+    ps.reason = ""
+
+    # 1) Passive decoder MUST detect it via arm_status.HasField("parking_stop_detail")
+    up = public_api_up_pb2.APIUp()
+    up.robot_type = rt
+    up.arm_status.parking_stop_detail.CopyFrom(ps)
+    for q in Q_LEFT_READY:
+        m = up.arm_status.motor_status.add()
+        m.pulse_per_rotation = 65535
+        m.position = int(round(q / (2.0 * np.pi) * 65535))
+        m.torque = 0.0
+    dec = decode_api_up_arm_telemetry(up.SerializeToString())
+    assert dec["parking_stop_active"] is True
+    assert dec["parking_category"] == 0
+
+    # 2) Real hex_device.Arm wrapped by execute_left_arm_trajectory MUST catch E-Stop (enum=0)
+    sdk_arm = Arm(robot_type=rt, motor_count=6, proto_version=(1, 0), name="estop_arm")
+    # Initial clean frame so execute loop acquires arm & installs _install_parking_stop_tracker
+    up_clean = public_api_up_pb2.APIUp()
+    up_clean.robot_type = rt
+    for q in Q_LEFT_READY:
+        m = up_clean.arm_status.motor_status.add()
+        m.pulse_per_rotation = 65535
+        m.position = int(round(q / (2.0 * np.pi) * 65535))
+        m.torque = 0.0
+    sdk_arm._update(up_clean, Timestamp(s=1, ns=0))
+
+    # Inject E-Stop frame (category=0, reason="") right after arm_dev.start() is called!
+    orig_start = sdk_arm.start
+
+    def start_then_estop():
+        orig_start()
+        sdk_arm._update(up, Timestamp(s=1, ns=10_000_000))
+
+    sdk_arm.start = start_then_estop
+    cmds = []
+    sdk_arm.joint_position_control = lambda *a, **kw: cmds.append(a)
+    stop_called = []
+    orig_stop = sdk_arm.stop
+    sdk_arm.stop = lambda: (stop_called.append(True), orig_stop())
+
+    api = _FakeAPI(sdk_arm)
+    clock, sleep = _make_sim_clock()
+    traj = np.linspace(Q_LEFT_READY, Q_LEFT_READY + np.array([0.05, 0, 0, 0, 0, 0]), 20)
+    res = execute_left_arm_trajectory(traj, dt=0.01, api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock)
+    assert res["completed"] is False
+    assert "Parking stop active" in (res["aborted_reason"] or "")
+    assert len(cmds) == 0, f"Sent {len(cmds)} commands despite E-Stop (enum=0)!"
+    assert len(stop_called) == 1
+    print("PASS: test_estop_enum_zero_with_empty_reason_is_detected")
+
+
+def test_comm_timeout_auto_clear_blocked_by_safe_send_gate():
+    """Audit2 #2b: SafeArmSendGate must drop real SDK clear_parking_stop and post-stop start()."""
+    rt = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
+    sdk_arm = Arm(robot_type=rt, motor_count=6, proto_version=(1, 0), name="gate_arm")
+    forwarded = []
+
+    async def fake_send(msg):
+        forwarded.append(msg)
+
+    gate = SafeArmSendGate(fake_send)
+
+    # 1) Real SDK clear_parking_stop is ALWAYS blocked (even before stop latch)
+    msg_clear = sdk_arm._construct_clear_parking_stop_message()
+    asyncio.run(gate(msg_clear))
+    assert len(forwarded) == 0
+    assert "clear_parking_stop" in gate.blocked_messages
+
+    # 2) After latch_stop(), real SDK api_control_initialize=True is blocked, but False (stop) is allowed
+    gate.latch_stop()
+    msg_start = sdk_arm._construct_init_message(True)
+    asyncio.run(gate(msg_start))
+    assert len(forwarded) == 0
+    assert "post_stop_api_control_initialize_true" in gate.blocked_messages
+
+    msg_stop = sdk_arm._construct_init_message(False)
+    asyncio.run(gate(msg_stop))
+    assert len(forwarded) == 1
+    print("PASS: test_comm_timeout_auto_clear_blocked_by_safe_send_gate")
+
+
+def test_single_frame_real_sdk_queue_pop_never_raises_and_calls_stop():
+    """Audit2 #3: real hex_device.Arm single-frame FIFO queue empties on pop -> must NOT raise TypeError and MUST call stop()."""
+    rt = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
+    sdk_arm = Arm(robot_type=rt, motor_count=6, proto_version=(1, 0), name="single_frame_arm")
+
+    up = public_api_up_pb2.APIUp()
+    up.robot_type = rt
+    for q in Q_LEFT_READY:
+        m = up.arm_status.motor_status.add()
+        m.pulse_per_rotation = 65535
+        m.position = int(round(q / (2.0 * np.pi) * 65535))
+        m.torque = 0.2
+    # Push ONE frame before start (like disconnect right after initial frame)
+    sdk_arm._update(up, Timestamp(s=1, ns=0))
+
+    stop_called = []
+    orig_stop = sdk_arm.stop
+
+    def tracked_stop():
+        stop_called.append(True)
+        orig_stop()
+
+    sdk_arm.stop = tracked_stop
+    api = _FakeAPI(sdk_arm)
+    clock, sleep = _make_sim_clock()
+
+    traj = np.linspace(Q_LEFT_READY, Q_LEFT_READY + np.array([0.05, 0, 0, 0, 0, 0]), 30)
+    res = execute_left_arm_trajectory(
+        traj, dt=0.01, stale_timeout_s=0.15, api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert "frozen/stale" in (res["aborted_reason"] or "").lower()
+    assert len(stop_called) == 1, "arm_dev.stop() MUST be called even when queue empties!"
+    assert api.closed is True
+    print("PASS: test_single_frame_real_sdk_queue_pop_never_raises_and_calls_stop")
+
+
+def test_execute_refuses_offline_perception():
+    """Audit2 #4: CLI --execute MUST refuse --offline-perception before touching hardware."""
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "src" / "step2_left_arm_air_jog.py"),
+            "--execute",
+            "--offline-perception",
+            str(ROOT / "docs" / "reports" / "step2_air_jog_report.json"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert "Refusing --execute" in proc.stderr
+    print("PASS: test_execute_refuses_offline_perception")
+
+
 if __name__ == "__main__":
     test_passive_reader_sends_zero_bytes_on_comm_timeout()
     test_folded_start_pose_is_rejected_not_skipped()
@@ -323,4 +499,9 @@ if __name__ == "__main__":
     test_unreached_goal_never_reports_completed()
     test_sigint_aborts_immediately_with_zero_extra_commands()
     test_nominal_execution_succeeds()
-    print("\nALL 8 OFFLINE SAFETY TESTS PASSED!")
+    test_passive_reader_matches_real_hex_device_arm_firefly_zero_offset()
+    test_estop_enum_zero_with_empty_reason_is_detected()
+    test_comm_timeout_auto_clear_blocked_by_safe_send_gate()
+    test_single_frame_real_sdk_queue_pop_never_raises_and_calls_stop()
+    test_execute_refuses_offline_perception()
+    print("\nALL 13 OFFLINE SAFETY TESTS PASSED!")

@@ -19,6 +19,15 @@ from hex_device.generated import public_api_types_pb2, public_api_up_pb2
 
 ENCODER_MIDPOINT = 65535.0 / 2.0
 
+# Matches hex_device.Arm.__init__: only these legacy arms subtract 65535/2;
+# Firefly Y6 and newer arms use raw_pos / ppr * 2*pi directly.
+LEGACY_OFFSET_ROBOT_TYPES = {
+    int(public_api_types_pb2.RobotType.RtArmSaberD6x),
+    int(public_api_types_pb2.RobotType.RtArmSaberD7x),
+    int(public_api_types_pb2.RobotType.RtArmArcherD6Y_P1),
+    int(public_api_types_pb2.RobotType.RtArmArcherY6L_V1),
+}
+
 
 def decode_api_up_arm_telemetry(raw_bytes: bytes) -> dict[str, Any] | None:
     """Decode one binary APIUp protobuf frame into a read-only telemetry dict."""
@@ -34,8 +43,11 @@ def decode_api_up_arm_telemetry(raw_bytes: bytes) -> dict[str, Any] | None:
 
     raw_pos = np.array([m.position for m in motors], dtype=np.float64)
     ppr = np.array([m.pulse_per_rotation for m in motors], dtype=np.float64)
-    # Exact conversion matching hex_device.Arm.convert_positions_to_rad_func
-    pos_rad = (raw_pos - ENCODER_MIDPOINT) / ppr * (2.0 * np.pi)
+    # Exact conversion matching hex_device.Arm.__init__ + MotorBase.convert_positions_to_rad
+    if int(up.robot_type) in LEGACY_OFFSET_ROBOT_TYPES:
+        pos_rad = (raw_pos - ENCODER_MIDPOINT) / ppr * (2.0 * np.pi)
+    else:
+        pos_rad = raw_pos / ppr * (2.0 * np.pi)
     vel = np.array([m.speed for m in motors], dtype=np.float64)
     tau = np.array([m.torque for m in motors], dtype=np.float64)
     temps = [float(m.motor_temperature) for m in motors]
@@ -48,11 +60,15 @@ def decode_api_up_arm_telemetry(raw_bytes: bytes) -> dict[str, Any] | None:
 
     parking_stop = ""
     parking_category = None
+    parking_stop_active = False
     if arm_st.HasField("parking_stop_detail"):
         ps = arm_st.parking_stop_detail
+        # In proto3, PscEmergencyStopButton == 0 with empty reason serializes to b"",
+        # so arm_st.HasField("parking_stop_detail") is the ONLY reliable presence signal!
+        parking_stop_active = True
         parking_category = int(ps.category)
-        if ps.category != 0 or ps.reason:
-            parking_stop = f"category={ps.category} reason={ps.reason}"
+        cat_name = public_api_types_pb2.ParkingStopCategory.Name(ps.category)
+        parking_stop = f"category={cat_name}({ps.category}) reason={ps.reason}"
 
     gripper = None
     for sec in up.secondary_device_status:
@@ -84,6 +100,7 @@ def decode_api_up_arm_telemetry(raw_bytes: bytes) -> dict[str, Any] | None:
         "voltages_v": volts,
         "error_codes": err_codes,
         "warnings": warnings,
+        "parking_stop_active": parking_stop_active,
         "parking_stop": parking_stop,
         "parking_category": parking_category,
         "gripper": gripper,
