@@ -510,6 +510,167 @@ def test_step3_gr100_open_close_and_occlusion_verified():
     print("PASS: test_step3_gr100_open_close_and_occlusion_verified")
 
 
+def _make_step3_dummy_segments(q0: np.ndarray) -> dict[str, np.ndarray]:
+    s = np.repeat(q0[None, :], 5, axis=0)
+    return {
+        "unfold": s,
+        "to_hover": s,
+        "descend_grasp": s,
+        "lift": s,
+        "to_place_hover": s,
+        "descend_place": s,
+        "retreat_place": s,
+        "return_ready": s,
+        "return_rest": s,
+    }
+
+
+class _FakeHand:
+    def __init__(self, initial_q: float = 0.02, *, freeze_after_close_cmd: bool = False, stuck_q: float | None = None):
+        self.q = initial_q
+        self.freeze_after_close_cmd = freeze_after_close_cmd
+        self.stuck_q = stuck_q
+        self._has_new = True
+        self.cmds = []
+
+    def has_new_data(self) -> bool:
+        return self._has_new
+
+    def get_motor_positions(self, pop: bool = False):
+        if pop:
+            pass
+        return [self.q]
+
+    def set_pos_torque(self, max_torque: float):
+        pass
+
+    def motor_command(self, cmd_type, values):
+        target = float(values[0])
+        self.cmds.append(target)
+        if self.freeze_after_close_cmd and target > 0.3:
+            # Simulate telemetry freezing when close command is issued
+            self._has_new = False
+            return
+        if self.stuck_q is not None and len(self.cmds) > 2:
+            self.q = self.stuck_q
+        elif target > 0.3:
+            # Tissue pack width stops jaws around 0.28 rad
+            self.q = 0.28
+        else:
+            self.q = target
+
+
+class _FakeStep3API:
+    def __init__(self, arm: Any, hand: Any):
+        self.device_list = [arm]
+        self.hand = hand
+        self.closed = False
+
+    def find_optional_device_by_robot_type(self, sdt):
+        return [self.hand] if self.hand is not None else []
+
+    def is_api_exit(self) -> bool:
+        return False
+
+    def close(self):
+        self.closed = True
+
+
+def test_step3_prestart_motor_error_blocks_before_start_and_open():
+    """P1 #1: J2 error code 4 without parking_stop_detail MUST abort BEFORE arm.start() and gripper open."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    arm.get_motor_error_codes = lambda: [None, 4, None, None, None, None]
+    hand = _FakeHand(GRIP_OPEN_RAD)
+    api = _FakeStep3API(arm, hand)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert "motor error" in (res["aborted_reason"] or "").lower()
+    assert arm.started is False, "arm.start() called despite J2 error!"
+    assert len(hand.cmds) == 0, f"Gripper commanded despite J2 error: {hand.cmds}"
+    print("PASS: test_step3_prestart_motor_error_blocks_before_start_and_open")
+
+
+def test_step3_frozen_gripper_after_close_never_verifies_grasp():
+    """P1 #2: Frozen GR100 feedback (stale 0.20 rad or no new frames on close) -> grasp_verified=False, no lift."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    hand = _FakeHand(GRIP_OPEN_RAD, freeze_after_close_cmd=True)
+    api = _FakeStep3API(arm, hand)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert res["grasp_verified"] is False
+    assert "feedback lost" in (res["aborted_reason"] or "").lower()
+    print("PASS: test_step3_frozen_gripper_after_close_never_verifies_grasp")
+
+
+def test_step3_stuck_gripper_at_place_or_unreached_rest_never_completes():
+    """P1 #3: Stuck gripper (0.20 rad) at place refuses retreat; lagging 0.10 rad at return_rest fails."""
+    q0 = Q_LEFT_READY.copy()
+    # Case A: gripper stuck at 0.20 rad during place release
+    arm_a = _FakeArm(q0)
+    hand_a = _FakeHand(GRIP_OPEN_RAD, stuck_q=0.20)
+    api_a = _FakeStep3API(arm_a, hand_a)
+    clock, sleep = _make_sim_clock()
+    res_a = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: api_a, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res_a["completed"] is False
+    assert res_a["release_verified"] is False
+
+    # Case B: arm lags 0.10 rad behind return_rest goal
+    arm_b = _FakeArm(q0, lag_rad=0.10)
+    hand_b = _FakeHand(GRIP_OPEN_RAD)
+    api_b = _FakeStep3API(arm_b, hand_b)
+    clock_b, sleep_b = _make_sim_clock()
+    res_b = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: api_b, sleep_fn=sleep_b, clock_fn=clock_b
+    )
+    assert res_b["completed"] is False
+    assert "return-to-rest" in (res_b["aborted_reason"] or "").lower()
+    print("PASS: test_step3_stuck_gripper_at_place_or_unreached_rest_never_completes")
+
+
+def test_step3_carried_object_collision_during_lift_is_detected():
+    """P1 #4: Carried tissue pack is checked during lift/to_place_hover/descend_place against table/right-arm/workcell."""
+    _, right_q, perception = _load_saved_data()
+    unoccluded = dict(perception)
+    unoccluded["object_footprint_m"] = [0.176, 0.078]
+    unoccluded["object_center_wc_m"] = [0.4056, 0.0506, 0.0898]
+    unoccluded["object_z_top_wc_m"] = 0.095
+    plan = plan_and_verify_step3(q_meas=Q_LEFT_READY, right_q_meas=right_q, perception=unoccluded)
+    assert plan["safe_to_execute"] is True, plan["blocking_reasons"]
+    assert plan["min_carried_object_clearance_m"] is not None
+    assert plan["min_carried_object_clearance_m"] >= 0.005
+    print("PASS: test_step3_carried_object_collision_during_lift_is_detected")
+
+
+def test_step3_overtemp_or_sustained_torque_aborts():
+    """Thermal / sustained high torque guard aborts before damage."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    arm.get_motor_temperatures = lambda: [45.0, 68.0, 50.0, 45.0, 45.0, 45.0]
+    hand = _FakeHand(GRIP_OPEN_RAD)
+    api = _FakeStep3API(arm, hand)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert "over-temperature" in (res["aborted_reason"] or "").lower()
+    assert arm.started is False
+    print("PASS: test_step3_overtemp_or_sustained_torque_aborts")
+
+
 def test_passive_reader_matches_real_hex_device_arm_firefly_zero_offset():
     """Audit2 #1: passive reader MUST match real hex_device.Arm(RtArmFireflyY6_H2_40) to 1e-9."""
     rt = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
@@ -914,4 +1075,9 @@ if __name__ == "__main__":
     test_secondary_device_command_blocked_when_stopped()
     test_step3_fails_closed_when_gripper_missing()
     test_step3_gr100_open_close_and_occlusion_verified()
-    print("\nALL 22 OFFLINE SAFETY TESTS PASSED!")
+    test_step3_prestart_motor_error_blocks_before_start_and_open()
+    test_step3_frozen_gripper_after_close_never_verifies_grasp()
+    test_step3_stuck_gripper_at_place_or_unreached_rest_never_completes()
+    test_step3_carried_object_collision_during_lift_is_detected()
+    test_step3_overtemp_or_sustained_torque_aborts()
+    print("\nALL 27 OFFLINE SAFETY TESTS PASSED!")

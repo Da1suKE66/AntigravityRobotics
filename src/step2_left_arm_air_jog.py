@@ -634,6 +634,7 @@ def _check_arm_fault(
     stale_timeout_s: float,
     max_tracking_err_rad: float,
     stop_requested: bool,
+    max_temp_c: float = 65.0,
 ) -> tuple[str | None, np.ndarray, float, float, float]:
     """Check all fault conditions safely even on single-frame SDK queues."""
     if stop_requested:
@@ -676,6 +677,11 @@ def _check_arm_fault(
     errs = arm_dev.get_motor_error_codes()
     if errs and any(e is not None for e in errs):
         return f"Motor error codes: {errs}", q_now, err, max_tau, last_fresh_t
+
+    if hasattr(arm_dev, "get_motor_temperatures"):
+        temps = arm_dev.get_motor_temperatures()
+        if temps is not None and len(temps) > 0 and max(float(t) for t in temps) >= max_temp_c:
+            return f"Motor over-temperature >= {max_temp_c:.1f}C: {[round(float(t), 1) for t in temps]}", q_now, err, max_tau, last_fresh_t
 
     if err > max_tracking_err_rad:
         return f"Tracking error {err:.4f} rad > {max_tracking_err_rad} rad", q_now, err, max_tau, last_fresh_t
@@ -806,7 +812,7 @@ def execute_left_arm_trajectory(
                 is_arm = (
                     isinstance(dev, arm_cls)
                     if arm_cls is not None
-                    else (hasattr(dev, "joint_position_control") or hasattr(dev, "mit_motor_command"))
+                    else (hasattr(dev, "joint_position_control") or hasattr(dev, "compensated_mit_control"))
                 )
                 if is_arm and dev.has_new_data():
                     arm_dev = dev

@@ -1,5 +1,5 @@
 {
-  "mode": "dry_run",
+  "mode": "offline_dry_run",
   "perception": {
     "z_table_wc_m": -0.0014,
     "z_table_arm1_m": -0.0964,
@@ -32,11 +32,12 @@
   "plan": {
     "safe_to_execute": true,
     "blocking_reasons": [],
-    "total_frames_checked": 6422,
+    "total_frames_checked": 6070,
     "grip_open_rad": 0.02,
     "grip_close_rad": 0.55,
     "min_geom_clearance_table_m": 0.0464,
     "min_geom_clearance_object_m": 0.0059,
+    "min_carried_object_clearance_m": 0.036,
     "p_hover_wc_m": [
       0.3859,
       0.0638,
@@ -52,7 +53,7 @@
       0.2038,
       0.0714
     ],
-    "total_motion_duration_s": 64.13
+    "total_motion_duration_s": 60.61
   },
   "execution": null
 }
