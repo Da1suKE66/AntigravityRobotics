@@ -618,6 +618,90 @@ def test_preexisting_comm_timeout_discovery_window_sends_zero_everything_in_real
     print("PASS: test_preexisting_comm_timeout_discovery_window_sends_zero_everything_in_real_sdk_loop")
 
 
+def test_kcp_handshake_and_report_frequency_pass_through_send_gate():
+    """Audit4 #1: enable_kcp, placeholder_message (kcp_start), and set_report_frequency MUST pass through."""
+    from hex_device import HexDeviceApi
+
+    sent_raw: list[bytes] = []
+    api = create_guarded_hex_device_api(
+        ws_url=None, control_hz=200, enable_kcp=True, send_down_callback=sent_raw.append
+    )
+    try:
+        # Even while start_blocked=True (pre-arm), KCP & report-freq messages must NOT be blocked
+        msg_kcp = api._construct_enable_kcp_message(12345)
+        msg_kcp_start = api._construct_kcp_start_message()
+        msg_freq = api._construct_tcp_report_frequency_message(
+            api._get_report_frequency_from_control_hz(200)
+        )
+        for m in (msg_kcp, msg_kcp_start, msg_freq):
+            assert api.send_gate._classify_blocked(m) is None, f"Misblocked: {m}"
+            asyncio.run(api.send_gate(m))
+        assert len(sent_raw) == 3, f"Expected 3 forwarded handshake msgs, got {len(sent_raw)}"
+        assert len(api.send_gate.blocked_messages) == 0
+    finally:
+        api.close()
+    print("PASS: test_kcp_handshake_and_report_frequency_pass_through_send_gate")
+
+
+def test_mid_motion_comm_timeout_zero_rearm_in_real_sdk_loop():
+    """Audit4 #2: Mid-motion CommTimeout -> 0 clear_parking_stop and 0 re-arm api_control_initialize=True."""
+    import threading
+    import time as _time
+
+    sent_raw: list[bytes] = []
+    stop_feeder = threading.Event()
+    feeder_thread_holder = []
+
+    def _factory():
+        api = create_guarded_hex_device_api(
+            ws_url=None, control_hz=200, enable_kcp=False, send_down_callback=sent_raw.append
+        )
+        # Healthy frame 0 so pre-start gate passes and arm_dev.start() is called
+        healthy = _make_firefly_api_up(Q_LEFT_READY)
+        healthy.arm_status.api_control_initialized = True
+        healthy.arm_status.session_holder = 1
+        _feed_api_up_threadsafe(api, healthy)
+        _time.sleep(0.03)
+
+        def _feeder():
+            # Keep feeding healthy frames for ~50 ms while motion starts, then inject CommTimeout!
+            for _ in range(5):
+                if stop_feeder.is_set():
+                    return
+                _feed_api_up_threadsafe(api, healthy)
+                _time.sleep(0.01)
+            ps_frame = _make_firefly_api_up(
+                Q_LEFT_READY,
+                parking_cat=public_api_types_pb2.ParkingStopCategory.PscAPICommunicationTimeout,
+                reason="mid-motion comm timeout",
+            )
+            _feed_api_up_threadsafe(api, ps_frame)
+            # Keep Arm._periodic alive briefly after parking stop to prove 0 re-arm sends
+            _time.sleep(0.06)
+
+        t = threading.Thread(target=_feeder, daemon=True)
+        t.start()
+        feeder_thread_holder.append(t)
+        return api
+
+    traj = np.linspace(Q_LEFT_READY, Q_LEFT_READY + np.array([0.05, 0, 0, 0, 0, 0]), 40)
+    try:
+        res = execute_left_arm_trajectory(traj, dt=0.01, api_factory=_factory)
+    finally:
+        stop_feeder.set()
+        for t in feeder_thread_holder:
+            t.join(timeout=1.0)
+
+    # Split sent packets before vs after first parking-stop-blocked event, and check total init_true <= 1
+    counts = _count_sent_arm_commands(sent_raw)
+    assert res["completed"] is False
+    assert "Parking stop active" in (res["aborted_reason"] or ""), res
+    assert counts["clear_parking_stop"] == 0, counts
+    # At most 1 initial api_control_initialize=True from healthy startup; 0 re-arm sends after CommTimeout!
+    assert counts["api_control_init_true"] <= 1, f"Re-arm sent after parking stop! counts={counts}"
+    print("PASS: test_mid_motion_comm_timeout_zero_rearm_in_real_sdk_loop")
+
+
 if __name__ == "__main__":
     test_passive_reader_sends_zero_bytes_on_comm_timeout()
     test_folded_start_pose_is_rejected_not_skipped()
@@ -634,4 +718,6 @@ if __name__ == "__main__":
     test_execute_refuses_offline_perception()
     test_preexisting_estop_frame0_sends_zero_everything_in_real_sdk_loop()
     test_preexisting_comm_timeout_discovery_window_sends_zero_everything_in_real_sdk_loop()
-    print("\nALL 15 OFFLINE SAFETY TESTS PASSED!")
+    test_kcp_handshake_and_report_frequency_pass_through_send_gate()
+    test_mid_motion_comm_timeout_zero_rearm_in_real_sdk_loop()
+    print("\nALL 17 OFFLINE SAFETY TESTS PASSED!")

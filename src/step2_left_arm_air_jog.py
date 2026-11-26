@@ -487,11 +487,16 @@ class SafeArmSendGate:
         self.execution_allowed = False
 
     def _classify_blocked(self, msg: Any) -> str | None:
-        # Inspect real hex_device APIDown.arm_command nested fields
+        # Non-arm APIDown messages (enable_kcp, placeholder_message/kcp_start, set_report_frequency)
+        # must ALWAYS pass through; in proto3 getattr(msg, "arm_command") returns an empty message
+        # even when unset, so check HasField("arm_command") first.
+        if hasattr(msg, "HasField") and not msg.HasField("arm_command"):
+            return None
         arm_cmd = getattr(msg, "arm_command", None)
         if arm_cmd is not None:
             shared = getattr(arm_cmd, "arm_shared_command", None)
             if shared is not None and getattr(shared, "clear_parking_stop", False):
+                self.latch_stop()
                 return "clear_parking_stop"
             if self.latched_stopped or not self.execution_allowed:
                 excl = getattr(arm_cmd, "arm_exclusive_command", None)
@@ -525,16 +530,25 @@ def _install_safe_send_gate(arm_dev: Any, start_blocked: bool = False) -> SafeAr
     return gate
 
 
-def _install_parking_stop_tracker(arm_dev: Any, initial_api_up: Any = None) -> None:
-    """Wrap arm_dev._update to preserve proto3 HasField('parking_stop_detail') from frame 0."""
+def _install_parking_stop_tracker(
+    arm_dev: Any,
+    initial_api_up: Any = None,
+    send_gate: SafeArmSendGate | None = None,
+) -> None:
+    """Wrap arm_dev._update to preserve proto3 HasField('parking_stop_detail') from frame 0
+    and synchronously latch SafeArmSendGate the instant a parking stop arrives.
+    """
     if not hasattr(arm_dev, "_parking_stop_present"):
         arm_dev._parking_stop_present = False
+    if send_gate is not None:
+        arm_dev._linked_send_gate = send_gate
     if initial_api_up is not None:
         try:
             if hasattr(initial_api_up, "HasField") and initial_api_up.HasField("arm_status"):
-                arm_dev._parking_stop_present = bool(
-                    initial_api_up.arm_status.HasField("parking_stop_detail")
-                )
+                has_ps = bool(initial_api_up.arm_status.HasField("parking_stop_detail"))
+                arm_dev._parking_stop_present = has_ps
+                if has_ps and getattr(arm_dev, "_linked_send_gate", None) is not None:
+                    arm_dev._linked_send_gate.latch_stop()
         except Exception:
             pass
     if getattr(arm_dev, "_parking_stop_tracker_installed", False):
@@ -546,9 +560,10 @@ def _install_parking_stop_tracker(arm_dev: Any, initial_api_up: Any = None) -> N
     def _wrapped_update(api_up_data, timestamp):
         try:
             if hasattr(api_up_data, "HasField") and api_up_data.HasField("arm_status"):
-                arm_dev._parking_stop_present = bool(
-                    api_up_data.arm_status.HasField("parking_stop_detail")
-                )
+                has_ps = bool(api_up_data.arm_status.HasField("parking_stop_detail"))
+                arm_dev._parking_stop_present = has_ps
+                if has_ps and getattr(arm_dev, "_linked_send_gate", None) is not None:
+                    arm_dev._linked_send_gate.latch_stop()
         except Exception:
             pass
         return orig_update(api_up_data, timestamp)
@@ -575,7 +590,9 @@ def create_guarded_hex_device_api(**kwargs: Any) -> Any:
         def _create_and_register_device(self, robot_type: Any, api_up: Any) -> Any:
             device = super()._create_and_register_device(robot_type, api_up)
             if device is not None:
-                _install_parking_stop_tracker(device, initial_api_up=api_up)
+                _install_parking_stop_tracker(
+                    device, initial_api_up=api_up, send_gate=self.send_gate
+                )
             return device
 
     return GuardedHexDeviceApi(**kwargs)
@@ -720,7 +737,7 @@ def execute_left_arm_trajectory(
         send_gate = getattr(api, "send_gate", None)
         if send_gate is None:
             send_gate = _install_safe_send_gate(arm_dev, start_blocked=True)
-        _install_parking_stop_tracker(arm_dev)
+        _install_parking_stop_tracker(arm_dev, send_gate=send_gate)
 
         # Pre-start health gate on frame 0 BEFORE unlocking send_gate or calling arm_dev.start()!
         ps_present = bool(getattr(arm_dev, "_parking_stop_present", False))
