@@ -1,25 +1,34 @@
-"""Step 2: Left-arm safe unfold + collision-checked low-speed air hover above target.
+"""Step 2: Left-arm safe unfold + full-frame dual-arm & obstacle-checked air hover.
 
-Usage:
-  1) Dry-run (perception + IK + collision verification, NO robot motion):
-     /home/lakeside/.venvs/mujoco/bin/python src/step2_left_arm_air_jog.py --dry-run
-
-  2) Execute on real left arm (port 8439, keep E-stop ready!):
-     /home/lakeside/.venvs/mujoco/bin/python src/step2_left_arm_air_jog.py --execute
+Safety & audit guarantees:
+1. Pure offline dry-run (--offline-step1 / --offline-perception) never opens a network
+   socket or camera. Live read-only mode uses src/readonly_ws_client.py (zero uplink
+   WebSocket sends — never instantiates HexDeviceApi background tasks).
+2. Trajectory verification checks EVERY frame k = 0 .. N (zero skipped frames) with:
+   - Live/measured right-arm joint angles written into MuJoCo (never assumed zero),
+   - Dynamic tabletop collider at z_table_wc,
+   - Dynamic 3D oriented target-object (tissue pack) collider with safety margins,
+   - Full left-arm collision-geom clearance (all links, fingers, wrist D405 bracket)
+     against self, workcell, right arm, tabletop, and target object.
+   Any limit violation or collision on ANY frame (including k = 0) sets
+   safe_to_execute = False with explicit blocking_reasons.
+3. Execution loop enforces immediate stop on fault/SIGINT/parking-stop/stale feedback
+   (0 commands sent after fault detection, immediate arm.stop()), plus strict
+   goal-reached & fresh-telemetry gating for completed = True.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import signal
 import sys
 import time
 from pathlib import Path
+from typing import Any, Callable
 
 import cv2
-import hex_device
-from hex_device import Arm, HexDeviceApi
 import mink
 import mujoco
 import numpy as np
@@ -33,16 +42,18 @@ from real_calibration import (
     CAMERA_INTRINSICS,
     CAMERA_SERIALS,
     LEFT_ARM_WS_URL,
+    RIGHT_ARM_WS_URL,
     T_ARM1_BASE_FROM_TOP_D435,
     URDF_WORKCELL_TO_LEFT_BASE,
     transform_points,
 )
+from readonly_ws_client import read_arm_passive_readonly
 
 # Safe unfolded ready posture for left arm (well inside joint limits, zero self-collision)
 Q_LEFT_READY = np.array([0.0, -0.75, 1.75, 0.0, 0.57, 0.0], dtype=np.float64)
 
 
-def detect_target_from_top_d435(out_dir: Path) -> dict:
+def detect_target_from_top_d435(out_dir: Path) -> dict[str, Any]:
     """Capture top D435 RGB-D and locate the highest tabletop object (tissue pack) in workcell_base."""
     out_dir.mkdir(parents=True, exist_ok=True)
     serial = CAMERA_SERIALS["top_d435"]
@@ -83,16 +94,13 @@ def detect_target_from_top_d435(out_dir: Path) -> dict:
     pts_arm1 = transform_points(T_ARM1_BASE_FROM_TOP_D435, pts_cam)
     pts_wc = pts_arm1 + URDF_WORKCELL_TO_LEFT_BASE[None, :]
 
-    # Map workcell Z back to full image for clean 2D segmentation
     z_wc_img = np.full((h, w), np.nan, dtype=np.float64)
     z_wc_img[valid] = pts_wc[:, 2]
 
-    # Estimate table surface z_table from 15th percentile of central region (below objects)
     roi_z = z_wc_img[60:420, 60:580]
     roi_valid = roi_z[np.isfinite(roi_z)]
     z_table = float(np.percentile(roi_valid, 15))
 
-    # Segment tabletop object: pixels 2.5 cm to 18 cm above table inside table ROI
     obj_mask = np.zeros((h, w), dtype=np.uint8)
     cond = (
         np.isfinite(z_wc_img)
@@ -100,7 +108,6 @@ def detect_target_from_top_d435(out_dir: Path) -> dict:
         & (z_wc_img < z_table + 0.18)
     )
     obj_mask[cond] = 255
-    # Restrict to workspace ROI (avoid top edge cables)
     obj_mask[:70, :] = 0
     obj_mask[440:, :] = 0
     obj_mask[:, :40] = 0
@@ -114,12 +121,10 @@ def detect_target_from_top_d435(out_dir: Path) -> dict:
     if num_labels <= 1:
         raise RuntimeError("No tabletop object detected above z_table + 2.5 cm in top D435 image.")
 
-    # Pick largest connected component
     areas = stats[1:, cv2.CC_STAT_AREA]
     best_idx = 1 + int(np.argmax(areas))
     comp_mask = labels == best_idx
 
-    # Gather 3D points of the detected object
     ys, xs = np.where(comp_mask)
     z_obj = depth_m[ys, xs]
     ok = (z_obj > 0.30) & (z_obj < 1.20)
@@ -135,16 +140,14 @@ def detect_target_from_top_d435(out_dir: Path) -> dict:
     z_top_wc = float(np.percentile(pts_obj_wc[:, 2], 90))
     center_arm1 = center_wc - URDF_WORKCELL_TO_LEFT_BASE
 
-    # Estimate principal axis in workcell XY via PCA
     xy_centered = pts_obj_wc[:, :2] - center_wc[:2]
     cov = np.cov(xy_centered.T)
-    eigvals, eigvecs = np.linalg.eigh(cov)
+    _, eigvecs = np.linalg.eigh(cov)
     major_xy = eigvecs[:, 1]
     minor_xy = eigvecs[:, 0]
     length_m = float(np.percentile(xy_centered @ major_xy, 95) - np.percentile(xy_centered @ major_xy, 5))
     width_m = float(np.percentile(xy_centered @ minor_xy, 95) - np.percentile(xy_centered @ minor_xy, 5))
 
-    # Draw overlay
     vis = color_img.copy()
     x0, y0, bw, bh, area = stats[best_idx]
     cv2.rectangle(vis, (x0, y0), (x0 + bw, y0 + bh), (0, 255, 0), 2)
@@ -169,29 +172,23 @@ def detect_target_from_top_d435(out_dir: Path) -> dict:
     }
 
 
-def read_left_arm_q(timeout_s: float = 5.0) -> np.ndarray:
-    """Read current 6-DOF left arm joint positions in read-only mode."""
-    hex_device.set_log_level("WARNING")
-    api = HexDeviceApi(ws_url=LEFT_ARM_WS_URL, control_hz=50, enable_kcp=True, local_port=0)
-    try:
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < timeout_s:
-            for dev in api.device_list:
-                if isinstance(dev, Arm) and dev.has_new_data():
-                    return np.asarray(dev.get_motor_positions(False), dtype=np.float64)
-            time.sleep(0.05)
-        raise TimeoutError("Timed out reading left arm joint positions.")
-    finally:
-        try:
-            api.close()
-        except Exception:
-            pass
+def read_dual_arms_passive_q(timeout_s: float = 5.0) -> tuple[np.ndarray, np.ndarray]:
+    """Read both left and right 6-DOF joint positions via strictly zero-write passive WS."""
+    left_res = read_arm_passive_readonly("left_arm", LEFT_ARM_WS_URL, timeout_s=timeout_s)
+    if not left_res["connected"] or not left_res["arm"]:
+        raise RuntimeError(f"Failed passive read of left arm: {left_res['error']}")
+    right_res = read_arm_passive_readonly("right_arm", RIGHT_ARM_WS_URL, timeout_s=timeout_s)
+    if not right_res["connected"] or not right_res["arm"]:
+        raise RuntimeError(f"Failed passive read of right arm: {right_res['error']}")
+    return (
+        np.asarray(left_res["arm"]["positions_rad"], dtype=np.float64),
+        np.asarray(right_res["arm"]["positions_rad"], dtype=np.float64),
+    )
 
 
 def build_quintic_segment(q0: np.ndarray, q1: np.ndarray, max_vel: float, dt: float) -> np.ndarray:
     """Build C^2 quintic joint-space trajectory respecting max_vel (rad/s)."""
     dq_max = float(np.max(np.abs(q1 - q0)))
-    # Quintic peak derivative ds/du = 1.875
     duration = max(1.5, 1.875 * dq_max / max_vel)
     steps = max(2, int(np.ceil(duration / dt)))
     traj = np.zeros((steps + 1, len(q0)), dtype=np.float64)
@@ -201,38 +198,106 @@ def build_quintic_segment(q0: np.ndarray, q1: np.ndarray, max_vel: float, dt: fl
     return traj
 
 
+def build_verification_model(
+    z_table_wc: float,
+    perception: dict[str, Any] | None = None,
+    obj_xy_margin_m: float = 0.010,
+    obj_z_margin_m: float = 0.005,
+) -> mujoco.MjModel:
+    """Compile firefly_dual.xml with dynamic tabletop and detected target-object colliders."""
+    spec = mujoco.MjSpec.from_file(str(ROOT / "model" / "firefly_dual.xml"))
+
+    # Add tabletop surface collider (top face at z_table_wc)
+    table_half_z = 0.025
+    spec.worldbody.add_geom(
+        name="table_surface_col",
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        pos=[0.35, 0.0, float(z_table_wc) - table_half_z],
+        size=[0.60, 0.65, table_half_z],
+        group=3,
+        contype=1,
+        conaffinity=1,
+        rgba=[0.6, 0.45, 0.3, 0.3],
+    )
+
+    # Add detected target object (tissue pack) as an oriented 3D box obstacle
+    if perception is not None and "object_center_wc_m" in perception:
+        cx, cy = float(perception["object_center_wc_m"][0]), float(perception["object_center_wc_m"][1])
+        z_top = float(perception["object_z_top_wc_m"])
+        length_m, width_m = perception.get("object_footprint_m", [0.18, 0.09])
+        major_xy = perception.get("major_axis_wc_xy", [0.0, 1.0])
+        yaw = math.atan2(float(major_xy[1]), float(major_xy[0]))
+        half_z = max(0.005, 0.5 * (z_top - z_table_wc + obj_z_margin_m))
+        center_z = z_table_wc + half_z
+        spec.worldbody.add_geom(
+            name="target_object_col",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            pos=[cx, cy, center_z],
+            quat=[math.cos(0.5 * yaw), 0.0, 0.0, math.sin(0.5 * yaw)],
+            size=[0.5 * float(length_m) + obj_xy_margin_m, 0.5 * float(width_m) + obj_xy_margin_m, half_z],
+            group=3,
+            contype=1,
+            conaffinity=1,
+            rgba=[0.9, 0.2, 0.2, 0.35],
+        )
+
+    return spec.compile()
+
+
 def plan_and_verify_step2(
     q_meas: np.ndarray,
+    right_q_meas: np.ndarray,
     target_hover_wc: np.ndarray,
     z_table_wc: float,
+    perception: dict[str, Any] | None = None,
     max_vel: float = 0.28,
     dt: float = 0.01,
-) -> dict:
-    """Plan Segment 1 (safe unfold) + Segment 2 (IK air hover) and verify in MuJoCo."""
-    model = mujoco.MjModel.from_xml_path(str(ROOT / "model" / "firefly_dual.xml"))
-    data = mujoco.MjData(model)
+    min_table_clearance_m: float = 0.02,
+    min_object_clearance_m: float = 0.02,
+) -> dict[str, Any]:
+    """Plan Segment 1 (unfold) + Segment 2 (IK air hover) and verify EVERY frame k=0..N."""
+    q_meas = np.asarray(q_meas, dtype=np.float64)
+    right_q_meas = np.asarray(right_q_meas, dtype=np.float64)
+
+    base_model = mujoco.MjModel.from_xml_path(str(ROOT / "model" / "firefly_dual.xml"))
+    verify_model = build_verification_model(z_table_wc=z_table_wc, perception=perception)
+    verify_data = mujoco.MjData(verify_model)
 
     left_q_adrs = [
-        int(model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"left_joint_{i}")])
+        int(verify_model.jnt_qposadr[mujoco.mj_name2id(verify_model, mujoco.mjtObj.mjOBJ_JOINT, f"left_joint_{i}")])
+        for i in range(1, 7)
+    ]
+    right_q_adrs = [
+        int(verify_model.jnt_qposadr[mujoco.mj_name2id(verify_model, mujoco.mjtObj.mjOBJ_JOINT, f"right_joint_{i}")])
         for i in range(1, 7)
     ]
     left_ranges = np.array(
         [
-            model.jnt_range[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"left_joint_{i}")]
+            verify_model.jnt_range[mujoco.mj_name2id(verify_model, mujoco.mjtObj.mjOBJ_JOINT, f"left_joint_{i}")]
             for i in range(1, 7)
         ],
         dtype=np.float64,
     )
-    left_tcp_sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "left_tcp_site")
+    left_tcp_sid = mujoco.mj_name2id(verify_model, mujoco.mjtObj.mjOBJ_SITE, "left_tcp_site")
+    table_gid = mujoco.mj_name2id(verify_model, mujoco.mjtObj.mjOBJ_GEOM, "table_surface_col")
+    obj_gid = mujoco.mj_name2id(verify_model, mujoco.mjtObj.mjOBJ_GEOM, "target_object_col")
+
+    left_col_gids = [
+        gid
+        for gid in range(verify_model.ngeom)
+        if (verify_model.geom_contype[gid] != 0 or verify_model.geom_conaffinity[gid] != 0)
+        and verify_model.body(verify_model.geom_bodyid[gid]).name.startswith("left_")
+    ]
 
     # Solve top-down hover IK for left_tcp_site using FireflyDualIK
-    ik = FireflyDualIK(model, site_suffix="tcp_site")
-    q_init = np.zeros(model.nq, dtype=np.float64)
+    ik = FireflyDualIK(base_model, site_suffix="tcp_site")
+    q_init = np.zeros(base_model.nq, dtype=np.float64)
     for i, adr in enumerate(left_q_adrs):
         q_init[adr] = Q_LEFT_READY[i]
+    for i, adr in enumerate(right_q_adrs):
+        q_init[adr] = right_q_meas[i]
 
     # Top-down orientation (yaw=+90 deg): TCP +Z straight down [0,0,-1], TCP +Y along +X
-    # (aligns parallel gripper jaws across the 8.4 cm short edge & keeps J6 cable twist small ~0.86 rad)
     R_topdown = np.array(
         [
             [0.0, 1.0, 0.0],
@@ -256,81 +321,207 @@ def plan_and_verify_step2(
 
     q_hover = np.array([q_sol[adr] for adr in left_q_adrs], dtype=np.float64)
 
-    # Build smooth low-speed quintic trajectories
-    seg1 = build_quintic_segment(q_meas, Q_LEFT_READY, max_vel=max_vel, dt=dt)
-    seg2 = build_quintic_segment(Q_LEFT_READY, q_hover, max_vel=max_vel, dt=dt)
-    full_traj = np.vstack([seg1, seg2[1:]])
+    # Build smooth low-speed quintic trajectories (skip unfold segment if already at Q_LEFT_READY)
+    if float(np.max(np.abs(q_meas - Q_LEFT_READY))) < 1e-3:
+        seg1 = q_meas[None, :].copy()
+        seg2 = build_quintic_segment(q_meas, q_hover, max_vel=max_vel, dt=dt)
+        full_traj = seg2
+    else:
+        seg1 = build_quintic_segment(q_meas, Q_LEFT_READY, max_vel=max_vel, dt=dt)
+        seg2 = build_quintic_segment(Q_LEFT_READY, q_hover, max_vel=max_vel, dt=dt)
+        full_traj = np.vstack([seg1, seg2[1:]])
 
-    # Verify trajectory in MuJoCo (clearance above z_table, joint limits, collisions, velocity)
+    # Verify EVERY SINGLE FRAME k = 0 .. len(full_traj) - 1 (stride 1, ZERO skipped frames!)
     min_tcp_z = 1e9
+    min_geom_table_dist = 1e9
+    min_geom_obj_dist = 1e9
     max_seg_vel = float(np.max(np.abs(np.diff(full_traj, axis=0)) / dt))
-    collisions_after_unfold = []
-    out_of_limits_after_unfold = 0
+    limit_violations: list[dict[str, Any]] = []
+    collisions: list[dict[str, Any]] = []
+    max_penetration_mm = 0.0
 
-    for k in range(0, len(full_traj), 2):
+    for k in range(len(full_traj)):
         q_k = full_traj[k]
-        mujoco.mj_resetData(model, data)
+        mujoco.mj_resetData(verify_model, verify_data)
         for i, adr in enumerate(left_q_adrs):
-            data.qpos[adr] = q_k[i]
-        mujoco.mj_forward(model, data)
+            verify_data.qpos[adr] = q_k[i]
+        for i, adr in enumerate(right_q_adrs):
+            verify_data.qpos[adr] = right_q_meas[i]
+        mujoco.mj_forward(verify_model, verify_data)
 
-        tcp_z = float(data.site_xpos[left_tcp_sid][2])
+        tcp_z = float(verify_data.site_xpos[left_tcp_sid][2])
         min_tcp_z = min(min_tcp_z, tcp_z)
 
-        # Skip the first 15% of Segment 1 while smoothly lifting off the folded mechanical stop
-        if k > int(0.15 * len(seg1)):
-            if np.any(q_k < left_ranges[:, 0] - 1e-4) or np.any(q_k > left_ranges[:, 1] + 1e-4):
-                out_of_limits_after_unfold += 1
-            for ci in range(data.ncon):
-                con = data.contact[ci]
-                if con.dist < -1e-3:
-                    g1 = model.geom(con.geom1).name or f"g{con.geom1}"
-                    g2 = model.geom(con.geom2).name or f"g{con.geom2}"
-                    if g1.startswith("left_") or g2.startswith("left_"):
-                        collisions_after_unfold.append((k, g1, g2, round(float(con.dist) * 1000.0, 2)))
+        # Joint limit check on every frame including k=0
+        for j in range(6):
+            lo, hi = float(left_ranges[j, 0]), float(left_ranges[j, 1])
+            if q_k[j] < lo - 1e-6 or q_k[j] > hi + 1e-6:
+                over = float(lo - q_k[j]) if q_k[j] < lo else float(q_k[j] - hi)
+                limit_violations.append(
+                    {"frame": k, "t_s": round(k * dt, 3), "joint": f"left_joint_{j + 1}", "exceed_rad": round(over, 6)}
+                )
+
+        # Contact check on every frame including k=0
+        for ci in range(verify_data.ncon):
+            con = verify_data.contact[ci]
+            if con.dist < -1e-4:
+                g1 = verify_model.geom(con.geom1).name or f"g{con.geom1}"
+                g2 = verify_model.geom(con.geom2).name or f"g{con.geom2}"
+                b1 = verify_model.body(verify_model.geom_bodyid[con.geom1]).name
+                b2 = verify_model.body(verify_model.geom_bodyid[con.geom2]).name
+                if b1.startswith("left_") or b2.startswith("left_"):
+                    pen_mm = round(float(-con.dist) * 1000.0, 3)
+                    max_penetration_mm = max(max_penetration_mm, pen_mm)
+                    if len(collisions) < 50:
+                        collisions.append(
+                            {"frame": k, "t_s": round(k * dt, 3), "geom1": g1, "geom2": g2, "penetration_mm": pen_mm}
+                        )
+
+        # Full left-arm geom distance to tabletop & target object
+        for gid in left_col_gids:
+            d_tab = float(mujoco.mj_geomDistance(verify_model, verify_data, gid, table_gid, 1.0, None))
+            if d_tab < min_geom_table_dist:
+                min_geom_table_dist = d_tab
+            if obj_gid >= 0:
+                d_obj = float(mujoco.mj_geomDistance(verify_model, verify_data, gid, obj_gid, 1.0, None))
+                if d_obj < min_geom_obj_dist:
+                    min_geom_obj_dist = d_obj
 
     # Final FK at hover
-    mujoco.mj_resetData(model, data)
+    mujoco.mj_resetData(verify_model, verify_data)
     for i, adr in enumerate(left_q_adrs):
-        data.qpos[adr] = q_hover[i]
-    mujoco.mj_forward(model, data)
-    hover_tcp_pos = data.site_xpos[left_tcp_sid].copy()
-    hover_tcp_z_axis = data.site_xmat[left_tcp_sid].reshape(3, 3)[:, 2].copy()
+        verify_data.qpos[adr] = q_hover[i]
+    for i, adr in enumerate(right_q_adrs):
+        verify_data.qpos[adr] = right_q_meas[i]
+    mujoco.mj_forward(verify_model, verify_data)
+    hover_tcp_pos = verify_data.site_xpos[left_tcp_sid].copy()
+    hover_tcp_z_axis = verify_data.site_xmat[left_tcp_sid].reshape(3, 3)[:, 2].copy()
 
-    safe = (
-        len(collisions_after_unfold) == 0
-        and out_of_limits_after_unfold == 0
-        and (min_tcp_z - z_table_wc) >= 0.08
-        and max_seg_vel <= max_vel + 0.05
-    )
+    blocking_reasons: list[str] = []
+    if limit_violations:
+        frames_viol = sorted({v["frame"] for v in limit_violations})
+        blocking_reasons.append(
+            f"Joint limit violation on {len(frames_viol)} frame(s) (first={frames_viol[0]}, last={frames_viol[-1]}, "
+            f"max_exceed={max(v['exceed_rad'] for v in limit_violations):.5f} rad)"
+        )
+    if collisions:
+        blocking_reasons.append(
+            f"Collision/penetration detected on trajectory (max_penetration={max_penetration_mm:.3f} mm, "
+            f"first_frame={collisions[0]['frame']}, pair={collisions[0]['geom1']} vs {collisions[0]['geom2']})"
+        )
+    if min_geom_table_dist < min_table_clearance_m:
+        blocking_reasons.append(
+            f"Min left-arm geom clearance to table ({min_geom_table_dist:.4f} m) < required {min_table_clearance_m:.4f} m"
+        )
+    if obj_gid >= 0 and min_geom_obj_dist < min_object_clearance_m:
+        blocking_reasons.append(
+            f"Min left-arm geom clearance to target object ({min_geom_obj_dist:.4f} m) < required {min_object_clearance_m:.4f} m"
+        )
+    if max_seg_vel > max_vel + 0.05:
+        blocking_reasons.append(f"Max joint velocity {max_seg_vel:.4f} rad/s > limit {max_vel + 0.05:.4f} rad/s")
 
     return {
-        "safe_to_execute": bool(safe),
+        "safe_to_execute": len(blocking_reasons) == 0,
+        "blocking_reasons": blocking_reasons,
+        "frames_checked": int(len(full_traj)),
+        "frames_skipped": 0,
         "q_meas": [round(float(x), 5) for x in q_meas],
+        "right_q_used": [round(float(x), 5) for x in right_q_meas],
         "q_ready": [round(float(x), 5) for x in Q_LEFT_READY],
         "q_hover": [round(float(x), 5) for x in q_hover],
-        "ik_left_pos_err_mm": round(float(info.get("left_pos_err_m", 0.0)) * 1000.0, 3),
-        "ik_left_ori_err_rad": round(float(info.get("left_ori_err_rad", 0.0)), 4),
+        "ik_left_pos_err_mm": round(float(info.get("pos_err_mm", 0.0)), 3),
+        "ik_left_ori_err_rad": round(float(info.get("ori_err_rad", 0.0)), 4),
         "hover_tcp_wc_m": [round(float(x), 4) for x in hover_tcp_pos],
         "hover_tcp_z_axis": [round(float(x), 4) for x in hover_tcp_z_axis],
         "min_tcp_z_wc_m": round(min_tcp_z, 4),
-        "min_clearance_above_table_m": round(min_tcp_z - z_table_wc, 4),
+        "min_geom_clearance_table_m": round(min_geom_table_dist, 4),
+        "min_geom_clearance_object_m": round(min_geom_obj_dist, 4) if obj_gid >= 0 else None,
+        "max_penetration_mm": round(max_penetration_mm, 3),
         "max_joint_vel_rad_s": round(max_seg_vel, 4),
         "seg1_duration_s": round((len(seg1) - 1) * dt, 2),
         "seg2_duration_s": round((len(seg2) - 1) * dt, 2),
         "total_duration_s": round((len(full_traj) - 1) * dt, 2),
-        "collisions_after_unfold": collisions_after_unfold[:10],
-        "out_of_limits_after_unfold": int(out_of_limits_after_unfold),
+        "limit_violation_count": len(limit_violations),
+        "limit_violations_sample": limit_violations[:10],
+        "collision_count": len(collisions),
+        "collisions_sample": collisions[:10],
         "_traj": full_traj,
     }
+
+
+def _is_parking_stop_active(ps_detail: Any) -> bool:
+    if ps_detail is None:
+        return False
+    if isinstance(ps_detail, str):
+        return bool(ps_detail.strip())
+    cat = getattr(ps_detail, "category", 0)
+    reason = getattr(ps_detail, "reason", "")
+    return bool(cat != 0 or reason)
+
+
+def _check_arm_fault(
+    api: Any,
+    arm_dev: Any,
+    q_cmd: np.ndarray,
+    now_t: float,
+    last_fresh_t: float,
+    stale_timeout_s: float,
+    max_tracking_err_rad: float,
+    stop_requested: bool,
+) -> tuple[str | None, np.ndarray, float, float, float]:
+    """Check all fault conditions; returns (abort_reason, q_now, err, max_tau, updated_last_fresh_t)."""
+    if stop_requested:
+        q_now = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
+        return "User SIGINT", q_now, 0.0, 0.0, last_fresh_t
+    if api.is_api_exit():
+        q_now = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
+        return "HexDeviceApi exited", q_now, 0.0, 0.0, last_fresh_t
+
+    if arm_dev.has_new_data():
+        last_fresh_t = now_t
+        q_now = np.asarray(arm_dev.get_motor_positions(True), dtype=np.float64)
+    else:
+        q_now = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
+
+    if now_t - last_fresh_t > stale_timeout_s:
+        return (
+            f"Feedback frozen/stale for {now_t - last_fresh_t:.3f}s (> {stale_timeout_s:.3f}s)",
+            q_now,
+            float(np.max(np.abs(q_cmd - q_now))),
+            0.0,
+            last_fresh_t,
+        )
+
+    ps = arm_dev.get_parking_stop_detail() if hasattr(arm_dev, "get_parking_stop_detail") else None
+    if _is_parking_stop_active(ps):
+        return f"Parking stop active: {ps}", q_now, float(np.max(np.abs(q_cmd - q_now))), 0.0, last_fresh_t
+
+    errs = arm_dev.get_motor_error_codes()
+    if errs and any(e is not None for e in errs):
+        return f"Motor error codes: {errs}", q_now, float(np.max(np.abs(q_cmd - q_now))), 0.0, last_fresh_t
+
+    tau_now = np.asarray(arm_dev.get_motor_torques(False), dtype=np.float64)
+    err = float(np.max(np.abs(q_cmd - q_now)))
+    max_tau = float(np.max(np.abs(tau_now))) if len(tau_now) else 0.0
+    if err > max_tracking_err_rad:
+        return f"Tracking error {err:.4f} rad > {max_tracking_err_rad} rad", q_now, err, max_tau, last_fresh_t
+
+    return None, q_now, err, max_tau, last_fresh_t
 
 
 def execute_left_arm_trajectory(
     traj: np.ndarray,
     dt: float = 0.01,
     max_tracking_err_rad: float = 0.25,
-) -> dict:
-    """Stream verified trajectory to real left arm (port 8439) with safety watchdog."""
+    stale_timeout_s: float = 0.15,
+    goal_tol_rad: float = 0.02,
+    settle_steps: int = 50,
+    api_factory: Callable[[], Any] | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    clock_fn: Callable[[], float] = time.perf_counter,
+    stop_flag: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """Stream verified trajectory to left arm with immediate-stop fault watchdog."""
     stop_requested = False
 
     def _sigint_handler(_sig, _frame):
@@ -338,85 +529,108 @@ def execute_left_arm_trajectory(
         stop_requested = True
 
     old_handler = signal.signal(signal.SIGINT, _sigint_handler)
-    hex_device.set_log_level("WARNING")
-    api = HexDeviceApi(ws_url=LEFT_ARM_WS_URL, control_hz=200, enable_kcp=True, local_port=0)
+
+    if api_factory is None:
+        import hex_device
+        from hex_device import Arm, HexDeviceApi
+
+        hex_device.set_log_level("WARNING")
+        api = HexDeviceApi(ws_url=LEFT_ARM_WS_URL, control_hz=200, enable_kcp=True, local_port=0)
+        arm_cls = Arm
+    else:
+        api = api_factory()
+        arm_cls = None
 
     max_err_seen = 0.0
     max_torque_seen = 0.0
-    aborted_reason = None
+    aborted_reason: str | None = None
     completed_steps = 0
-    final_q = None
+    commands_sent = 0
+    final_q: np.ndarray | None = None
+    final_feedback_fresh = False
+    arm_dev = None
+
+    def _is_stop() -> bool:
+        return stop_requested or (stop_flag is not None and stop_flag())
 
     try:
-        t0 = time.monotonic()
-        arm_dev = None
-        while time.monotonic() - t0 < 5.0:
+        t0 = clock_fn()
+        while clock_fn() - t0 < 5.0:
             for dev in api.device_list:
-                if isinstance(dev, Arm) and dev.has_new_data():
+                is_arm = isinstance(dev, arm_cls) if arm_cls is not None else hasattr(dev, "joint_position_control")
+                if is_arm and dev.has_new_data():
                     arm_dev = dev
                     break
             if arm_dev is not None:
                 break
-            time.sleep(0.05)
+            sleep_fn(0.05)
 
         if arm_dev is None:
             raise TimeoutError("Could not connect to left arm for execution.")
 
-        q_live = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
+        q_live = np.asarray(arm_dev.get_motor_positions(True), dtype=np.float64)
         start_diff = float(np.max(np.abs(q_live - traj[0])))
         if start_diff > 0.05:
             raise RuntimeError(f"Live arm moved since planning (diff={start_diff:.4f} rad > 0.05). Aborting.")
 
-        # Acquire control and hold current position briefly before moving
         arm_dev.start()
         vel_lim = [0.6] * 6
         acc_lim = [1.2] * 6
-        for _ in range(30):
+        last_fresh_t = clock_fn()
+
+        # Brief bumpless hold at start with fault watchdog active
+        for _ in range(10):
+            now_t = clock_fn()
+            aborted_reason, q_now, err, max_tau, last_fresh_t = _check_arm_fault(
+                api, arm_dev, q_live, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+            )
+            if aborted_reason is not None:
+                break
             arm_dev.joint_position_control(q_live.tolist(), vel_lim, acc_lim)
-            time.sleep(0.01)
+            commands_sent += 1
+            sleep_fn(dt)
 
-        t_start = time.perf_counter()
-        for k in range(len(traj)):
-            if stop_requested:
-                aborted_reason = "User SIGINT"
-                break
-            if api.is_api_exit():
-                aborted_reason = "HexDeviceApi exited"
-                break
+        # Trajectory streaming loop: check faults BEFORE every command
+        t_start = clock_fn()
+        if aborted_reason is None:
+            for k in range(len(traj)):
+                now_t = clock_fn()
+                q_cmd = traj[k]
+                aborted_reason, q_now, err, max_tau, last_fresh_t = _check_arm_fault(
+                    api, arm_dev, q_cmd, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+                )
+                max_err_seen = max(max_err_seen, err)
+                max_torque_seen = max(max_torque_seen, max_tau)
+                if aborted_reason is not None:
+                    break
 
-            q_cmd = traj[k]
-            arm_dev.joint_position_control(q_cmd.tolist(), vel_lim, acc_lim)
+                arm_dev.joint_position_control(q_cmd.tolist(), vel_lim, acc_lim)
+                commands_sent += 1
+                completed_steps = k + 1
 
-            q_now = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
-            tau_now = np.asarray(arm_dev.get_motor_torques(False), dtype=np.float64)
-            err = float(np.max(np.abs(q_cmd - q_now)))
-            max_err_seen = max(max_err_seen, err)
-            max_torque_seen = max(max_torque_seen, float(np.max(np.abs(tau_now))))
+                target_t = t_start + (k + 1) * dt
+                sleep_s = target_t - clock_fn()
+                if sleep_s > 0:
+                    sleep_fn(sleep_s)
 
-            errs = arm_dev.get_motor_error_codes()
-            if errs and any(e is not None for e in errs):
-                aborted_reason = f"Motor error codes: {errs}"
-                break
-            if err > max_tracking_err_rad:
-                aborted_reason = f"Tracking error {err:.4f} rad > {max_tracking_err_rad} rad"
-                break
+        # Settle ONLY if no abort occurred — and keep watchdog active on every settle tick
+        if aborted_reason is None:
+            for _ in range(settle_steps):
+                now_t = clock_fn()
+                aborted_reason, q_now, err, max_tau, last_fresh_t = _check_arm_fault(
+                    api, arm_dev, traj[-1], now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+                )
+                max_err_seen = max(max_err_seen, err)
+                max_torque_seen = max(max_torque_seen, max_tau)
+                if aborted_reason is not None:
+                    break
+                arm_dev.joint_position_control(traj[-1].tolist(), vel_lim, acc_lim)
+                commands_sent += 1
+                sleep_fn(dt)
 
-            completed_steps = k + 1
-            target_t = t_start + (k + 1) * dt
-            sleep_s = target_t - time.perf_counter()
-            if sleep_s > 0:
-                time.sleep(sleep_s)
-
-        # Hold final position for 1.0 s to let controller settle cleanly
-        q_hold = (
-            np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
-            if aborted_reason
-            else traj[-1]
-        )
-        for _ in range(100):
-            arm_dev.joint_position_control(q_hold.tolist(), vel_lim, acc_lim)
-            time.sleep(0.01)
+        # Immediately stop controller upon completion OR fault (ZERO commands sent after fault!)
         final_q = np.asarray(arm_dev.get_motor_positions(False), dtype=np.float64)
+        final_feedback_fresh = (clock_fn() - last_fresh_t) <= stale_timeout_s
         arm_dev.stop()
     finally:
         signal.signal(signal.SIGINT, old_handler)
@@ -425,15 +639,31 @@ def execute_left_arm_trajectory(
         except Exception:
             pass
 
+    final_err = float(np.max(np.abs(final_q - traj[-1]))) if final_q is not None else None
+    if aborted_reason is None and (not final_feedback_fresh):
+        aborted_reason = "Final telemetry stale at completion"
+    if aborted_reason is None and (final_err is None or final_err > goal_tol_rad):
+        aborted_reason = f"Goal not reached: final_err={final_err:.4f} rad > goal_tol={goal_tol_rad:.4f} rad"
+
+    completed = (
+        aborted_reason is None
+        and completed_steps == int(len(traj))
+        and final_feedback_fresh
+        and final_err is not None
+        and final_err <= goal_tol_rad
+    )
+
     return {
-        "completed": aborted_reason is None,
+        "completed": bool(completed),
         "aborted_reason": aborted_reason,
         "completed_steps": completed_steps,
         "total_steps": int(len(traj)),
+        "commands_sent": commands_sent,
+        "final_feedback_fresh": bool(final_feedback_fresh),
         "max_tracking_err_rad": round(max_err_seen, 4),
         "max_torque_nm": round(max_torque_seen, 3),
         "final_q_rad": [round(float(x), 5) for x in final_q] if final_q is not None else None,
-        "final_err_to_goal_rad": round(float(np.max(np.abs(final_q - traj[-1]))), 4) if final_q is not None else None,
+        "final_err_to_goal_rad": round(final_err, 4) if final_err is not None else None,
     }
 
 
@@ -464,10 +694,22 @@ def capture_verification_snapshots(out_dir: Path) -> dict[str, str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Step 2: Left-arm safe unfold + low-speed air hover.")
+    parser = argparse.ArgumentParser(description="Step 2: Left-arm unfold + full-frame verified air hover.")
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--dry-run", action="store_true", help="Plan and verify in MuJoCo only (no arm motion).")
+    mode.add_argument("--dry-run", action="store_true", help="Plan and verify in MuJoCo only (zero robot motion).")
     mode.add_argument("--execute", action="store_true", help="Execute verified trajectory on real left arm.")
+    parser.add_argument(
+        "--offline-step1",
+        type=Path,
+        default=None,
+        help="Path to saved step1_readonly_report.json for 100%% offline dry-run (no WS connection).",
+    )
+    parser.add_argument(
+        "--offline-perception",
+        type=Path,
+        default=None,
+        help="Path to saved step2_air_jog_report.json to reuse saved perception offline (no camera access).",
+    )
     parser.add_argument("--hover-clearance", type=float, default=0.10, help="Hover height above object top (m).")
     parser.add_argument("--max-vel", type=float, default=0.28, help="Max joint speed (rad/s).")
     parser.add_argument("--target-xyz", type=float, nargs=3, default=None, help="Optional override hover XYZ in workcell_base (m).")
@@ -476,9 +718,12 @@ def main() -> None:
     out_dir = ROOT / "docs" / "reports" / "step2_snapshots"
     report_path = ROOT / "docs" / "reports" / "step2_air_jog_report.json"
 
-    print("1) Detecting tabletop & target from top D435...")
-    perception = detect_target_from_top_d435(out_dir)
-    print(f"   z_table_wc={perception['z_table_wc_m']} m, obj_wc={perception['object_center_wc_m']}, z_top={perception['object_z_top_wc_m']} m")
+    if args.offline_perception is not None:
+        print(f"1) Loading saved perception offline from {args.offline_perception}...")
+        perception = json.loads(args.offline_perception.read_text(encoding="utf-8"))["perception"]
+    else:
+        print("1) Detecting tabletop & target from top D435...")
+        perception = detect_target_from_top_d435(out_dir)
 
     if args.target_xyz is not None:
         hover_wc = np.asarray(args.target_xyz, dtype=np.float64)
@@ -486,32 +731,48 @@ def main() -> None:
         c = perception["object_center_wc_m"]
         hover_wc = np.array([c[0], c[1], perception["object_z_top_wc_m"] + args.hover_clearance], dtype=np.float64)
 
-    print(f"2) Reading live left arm q_meas (read-only)...")
-    q_meas = read_left_arm_q()
+    if args.offline_step1 is not None:
+        print(f"2) Loading saved dual-arm joint readings offline from {args.offline_step1}...")
+        s1 = json.loads(args.offline_step1.read_text(encoding="utf-8"))
+        q_meas = np.asarray(s1["left_arm"]["arm"]["positions_rad"], dtype=np.float64)
+        right_q_meas = np.asarray(s1["right_arm"]["arm"]["positions_rad"], dtype=np.float64)
+    else:
+        print("2) Reading live dual-arm joint angles via zero-write passive WS...")
+        q_meas, right_q_meas = read_dual_arms_passive_q()
 
-    print(f"3) Planning & verifying trajectory to hover_wc={hover_wc.round(4).tolist()}...")
+    print(f"3) Planning & verifying EVERY frame k=0..N to hover_wc={hover_wc.round(4).tolist()}...")
     plan = plan_and_verify_step2(
         q_meas=q_meas,
+        right_q_meas=right_q_meas,
         target_hover_wc=hover_wc,
         z_table_wc=perception["z_table_wc_m"],
+        perception=perception,
         max_vel=args.max_vel,
     )
     traj = plan.pop("_traj")
-    print(f"   safe_to_execute={plan['safe_to_execute']}, total_duration={plan['total_duration_s']} s, min_clearance={plan['min_clearance_above_table_m']} m")
+    print(
+        f"   safe_to_execute={plan['safe_to_execute']}, frames_checked={plan['frames_checked']} "
+        f"(skipped={plan['frames_skipped']}), blocking_reasons={plan['blocking_reasons']}"
+    )
 
     exec_res = None
     post_snaps = None
     if args.execute:
+        if args.offline_step1 is not None:
+            raise RuntimeError("Refusing --execute with --offline-step1; live dual-arm state is required.")
         if not plan["safe_to_execute"]:
-            raise RuntimeError("Plan failed safety verification — refusing to execute!")
+            raise RuntimeError(f"Plan failed safety verification — refusing to execute! Reasons: {plan['blocking_reasons']}")
         print("4) EXECUTING verified low-speed trajectory on real left arm (port 8439)...")
         exec_res = execute_left_arm_trajectory(traj)
-        print(f"   completed={exec_res['completed']}, max_tracking_err={exec_res['max_tracking_err_rad']} rad, max_torque={exec_res['max_torque_nm']} N·m")
+        print(
+            f"   completed={exec_res['completed']}, aborted_reason={exec_res['aborted_reason']}, "
+            f"max_tracking_err={exec_res['max_tracking_err_rad']} rad"
+        )
         print("5) Capturing post-hover verification snapshots...")
         post_snaps = capture_verification_snapshots(out_dir)
 
     report = {
-        "mode": "execute" if args.execute else "dry_run",
+        "mode": "execute" if args.execute else ("offline_dry_run" if args.offline_step1 else "dry_run"),
         "target_hover_wc_m": [round(float(x), 4) for x in hover_wc],
         "perception": perception,
         "plan": plan,
@@ -520,7 +781,6 @@ def main() -> None:
     }
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nSaved report: {report_path}")
-    print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

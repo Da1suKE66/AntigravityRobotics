@@ -15,14 +15,14 @@ import time
 from pathlib import Path
 
 import cv2
-import hex_device
-from hex_device import Arm, Hands, HexDeviceApi, public_api_types_pb2
 import mujoco
 import numpy as np
 import pyrealsense2 as rs
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+
+from readonly_ws_client import read_arm_passive_readonly
 
 from real_calibration import (
     CAMERA_INTRINSICS,
@@ -51,94 +51,8 @@ def _to_list(val):
 
 
 def read_arm_readonly(name: str, ws_url: str, timeout_s: float = 5.0) -> dict:
-    """Connect to one Firefly Y6 arm controller in strictly read-only mode."""
-    result: dict = {
-        "name": name,
-        "ws_url": ws_url,
-        "connected": False,
-        "arm": None,
-        "gripper": None,
-        "error": None,
-    }
-    api = None
-    try:
-        hex_device.set_log_level("WARNING")
-        api = HexDeviceApi(ws_url=ws_url, control_hz=50, enable_kcp=True, local_port=0)
-        t0 = time.monotonic()
-        arm_dev = None
-        hand_dev = None
-        arm_ready = False
-        hand_ready = False
-
-        while time.monotonic() - t0 < timeout_s:
-            if api.is_api_exit():
-                result["error"] = "HexDeviceApi exited before telemetry arrived"
-                break
-
-            for dev in api.device_list:
-                if isinstance(dev, Arm):
-                    arm_dev = dev
-                    if dev.has_new_data():
-                        arm_ready = True
-                elif isinstance(dev, Hands):
-                    hand_dev = dev
-                    if dev.has_new_data():
-                        hand_ready = True
-
-            if hand_dev is None:
-                opt = api.find_optional_device_by_robot_type(
-                    public_api_types_pb2.SecondaryDeviceType.SdtHandGp100
-                )
-                if opt is not None:
-                    hand_dev = opt
-                    if hasattr(opt, "has_new_data") and opt.has_new_data():
-                        hand_ready = True
-
-            if arm_ready and (hand_dev is None or hand_ready):
-                # Wait briefly for a couple of frames so optional hand can register if present
-                if time.monotonic() - t0 > 0.8:
-                    break
-            time.sleep(0.05)
-
-        if arm_dev is not None and arm_ready:
-            result["connected"] = True
-            q = arm_dev.get_motor_positions(False)
-            dq = arm_dev.get_motor_velocities(False)
-            tau = arm_dev.get_motor_torques(False)
-            result["arm"] = {
-                "arm_name": str(arm_dev.get_arm_name()) if hasattr(arm_dev, "get_arm_name") else None,
-                "motor_count": int(getattr(arm_dev, "motor_count", len(q))),
-                "joint_names": list(arm_dev.get_joint_names()) if hasattr(arm_dev, "get_joint_names") else None,
-                "positions_rad": _to_list(q),
-                "velocities_rad_s": _to_list(dq),
-                "torques_nm": _to_list(tau),
-                "temperatures_c": _to_list(arm_dev.get_motor_temperatures()) if hasattr(arm_dev, "get_motor_temperatures") else None,
-                "voltages_v": _to_list(arm_dev.get_motor_voltages()) if hasattr(arm_dev, "get_motor_voltages") else None,
-                "error_codes": _to_list(arm_dev.get_motor_error_codes()) if hasattr(arm_dev, "get_motor_error_codes") else None,
-                "warnings": _to_list(arm_dev.get_motor_warnings()) if hasattr(arm_dev, "get_motor_warnings") else None,
-                "parking_stop": str(arm_dev.get_parking_stop_detail()) if hasattr(arm_dev, "get_parking_stop_detail") else None,
-            }
-        else:
-            result["error"] = result["error"] or "Timeout waiting for Arm telemetry"
-
-        if hand_dev is not None:
-            hq = hand_dev.get_motor_positions(False) if hasattr(hand_dev, "get_motor_positions") else None
-            htau = hand_dev.get_motor_torques(False) if hasattr(hand_dev, "get_motor_torques") else None
-            result["gripper"] = {
-                "type": type(hand_dev).__name__,
-                "hand_type": str(hand_dev.get_hand_type()) if hasattr(hand_dev, "get_hand_type") else None,
-                "positions_rad": _to_list(hq),
-                "torques_nm": _to_list(htau),
-            }
-    except Exception as exc:
-        result["error"] = f"{type(exc).__name__}: {exc}"
-    finally:
-        if api is not None:
-            try:
-                api.close()
-            except Exception:
-                pass
-    return result
+    """Connect to one Firefly Y6 arm controller in strictly zero-write passive WS mode."""
+    return read_arm_passive_readonly(name=name, ws_url=ws_url, timeout_s=timeout_s)
 
 
 def evaluate_fk_in_mujoco(left_q: list[float] | None, right_q: list[float] | None) -> dict:

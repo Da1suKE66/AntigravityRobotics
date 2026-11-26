@@ -1,5 +1,5 @@
 {
-  "mode": "dry_run",
+  "mode": "offline_dry_run",
   "target_hover_wc_m": [
     0.4058,
     0.0507,
@@ -35,14 +35,28 @@
     "overlay_path": "/home/lakeside/Documents/Antigravity Robotics/docs/reports/step2_snapshots/step2_target_overlay.png"
   },
   "plan": {
-    "safe_to_execute": true,
+    "safe_to_execute": false,
+    "blocking_reasons": [
+      "Joint limit violation on 75 frame(s) (first=0, last=74, max_exceed=0.00384 rad)",
+      "Collision/penetration detected on trajectory (max_penetration=1.721 mm, first_frame=0, pair=left_link_1_col_0 vs left_link_5_col_2)"
+    ],
+    "frames_checked": 1955,
+    "frames_skipped": 0,
     "q_meas": [
-      -0.00684,
+      -0.00685,
       -1.57446,
-      3.14542,
+      3.14543,
       0.01283,
-      0.0005,
-      0.00298
+      0.00049,
+      0.00302
+    ],
+    "right_q_used": [
+      0.00269,
+      -1.56959,
+      3.14373,
+      0.01961,
+      0.00658,
+      -0.01237
     ],
     "q_ready": [
       0.0,
@@ -60,7 +74,7 @@
       -0.0,
       0.85664
     ],
-    "ik_left_pos_err_mm": 0.0,
+    "ik_left_pos_err_mm": 0.001,
     "ik_left_ori_err_rad": 0.0,
     "hover_tcp_wc_m": [
       0.4058,
@@ -73,13 +87,149 @@
       -1.0
     ],
     "min_tcp_z_wc_m": 0.199,
-    "min_clearance_above_table_m": 0.2007,
+    "min_geom_clearance_table_m": 0.0967,
+    "min_geom_clearance_object_m": 0.0904,
+    "max_penetration_mm": 1.721,
     "max_joint_vel_rad_s": 0.2799,
     "seg1_duration_s": 9.35,
     "seg2_duration_s": 10.19,
     "total_duration_s": 19.54,
-    "collisions_after_unfold": [],
-    "out_of_limits_after_unfold": 0
+    "limit_violation_count": 138,
+    "limit_violations_sample": [
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "joint": "left_joint_2",
+        "exceed_rad": 0.003662
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "joint": "left_joint_3",
+        "exceed_rad": 0.003843
+      },
+      {
+        "frame": 1,
+        "t_s": 0.01,
+        "joint": "left_joint_2",
+        "exceed_rad": 0.003662
+      },
+      {
+        "frame": 1,
+        "t_s": 0.01,
+        "joint": "left_joint_3",
+        "exceed_rad": 0.003843
+      },
+      {
+        "frame": 2,
+        "t_s": 0.02,
+        "joint": "left_joint_2",
+        "exceed_rad": 0.003662
+      },
+      {
+        "frame": 2,
+        "t_s": 0.02,
+        "joint": "left_joint_3",
+        "exceed_rad": 0.003843
+      },
+      {
+        "frame": 3,
+        "t_s": 0.03,
+        "joint": "left_joint_2",
+        "exceed_rad": 0.003662
+      },
+      {
+        "frame": 3,
+        "t_s": 0.03,
+        "joint": "left_joint_3",
+        "exceed_rad": 0.003843
+      },
+      {
+        "frame": 4,
+        "t_s": 0.04,
+        "joint": "left_joint_2",
+        "exceed_rad": 0.003662
+      },
+      {
+        "frame": 4,
+        "t_s": 0.04,
+        "joint": "left_joint_3",
+        "exceed_rad": 0.003842
+      }
+    ],
+    "collision_count": 50,
+    "collisions_sample": [
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.319
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.279
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.142
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.306
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.253
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.714
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.721
+      },
+      {
+        "frame": 0,
+        "t_s": 0.0,
+        "geom1": "left_link_2_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.183
+      },
+      {
+        "frame": 1,
+        "t_s": 0.01,
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.319
+      },
+      {
+        "frame": 1,
+        "t_s": 0.01,
+        "geom1": "left_link_1_col_0",
+        "geom2": "left_link_5_col_2",
+        "penetration_mm": 1.279
+      }
+    ]
   },
   "execution": null,
   "post_hover_snapshots": null
