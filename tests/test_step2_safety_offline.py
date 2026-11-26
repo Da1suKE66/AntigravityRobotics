@@ -103,12 +103,17 @@ def test_passive_reader_sends_zero_bytes_on_comm_timeout():
 
 def test_folded_start_pose_is_rejected_not_skipped():
     """Audit #1: folded start pose with k=0 limit violation & self-collision must NOT pass."""
-    left_q, right_q, perception = _load_saved_data()
+    _, right_q, perception = _load_saved_data()
+    # Explicit folded start pose recorded on 2026-11-26 00:44 (J2=-1.5745, J3=3.1454)
+    folded_left_q = np.array(
+        [-0.0068467, -1.5744624, 3.1454333, 0.0128298, 0.0004893, 0.0030209],
+        dtype=np.float64,
+    )
     c = perception["object_center_wc_m"]
     hover_wc = np.array([c[0], c[1], perception["object_z_top_wc_m"] + 0.10], dtype=np.float64)
 
     plan = plan_and_verify_step2(
-        q_meas=left_q,
+        q_meas=folded_left_q,
         right_q_meas=right_q,
         target_hover_wc=hover_wc,
         z_table_wc=perception["z_table_wc_m"],

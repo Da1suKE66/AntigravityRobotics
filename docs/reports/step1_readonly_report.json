@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-26 00:44:27",
+  "timestamp": "2026-11-26 02:15:52",
   "se3_checks": {
     "T_arm1_link6_from_left_d405": {
       "ortho_err": 1.5014901571318902e-09,
@@ -25,9 +25,14 @@
   "left_arm": {
     "name": "left_arm",
     "ws_url": "ws://[fe80::cc44:e4ff:fecf:de48%enx00e04c680044]:8439",
+    "transport": "passive_zero_write_ws",
     "connected": true,
     "arm": {
-      "arm_name": "firefly_y6_40",
+      "robot_type": 39,
+      "session_id": 10,
+      "session_holder": 0,
+      "api_control_initialized": false,
+      "calibrated": true,
       "motor_count": 6,
       "joint_names": [
         "joint_1",
@@ -38,36 +43,36 @@
         "joint_6"
       ],
       "positions_rad": [
-        -0.006846701823905499,
-        -1.5744623582611827,
-        3.145433312333272,
-        0.012829826107904767,
-        0.0004892559817611821,
-        0.0030209234930177577
+        0.0011654658720459266,
+        -1.5075903832892932,
+        3.0619774528018744,
+        0.019901660156818036,
+        0.000230696329428114,
+        0.0010459232286149948
       ],
       "velocities_rad_s": [
         0.0,
         0.0,
         0.0,
-        -2.62154919804675e-05,
         0.0,
-        0.000574868288428823
-      ],
-      "torques_nm": [
-        -0.039487502574920647,
-        0.8292375540733338,
-        -0.789750051498413,
-        -0.039487502574920647,
-        -0.017316001892089844,
+        0.0,
         0.0
       ],
+      "torques_nm": [
+        0.0,
+        1.1056500720977782,
+        -6.949800453186034,
+        -1.461037595272064,
+        -0.04329000473022461,
+        -0.04329000473022461
+      ],
       "temperatures_c": [
-        38.20000076293945,
-        35.400001525878906,
-        36.5,
-        39.10000228881836,
-        40.70000076293945,
-        38.5
+        47.900001525878906,
+        45.60000228881836,
+        58.70000076293945,
+        48.10000228881836,
+        49.29999923706055,
+        48.5
       ],
       "voltages_v": [
         0.0,
@@ -78,12 +83,12 @@
         0.0
       ],
       "error_codes": [
-        "None",
-        "None",
-        "None",
-        "None",
-        "None",
-        "None"
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
       ],
       "warnings": [
         "",
@@ -93,17 +98,33 @@
         "",
         ""
       ],
-      "parking_stop": ""
+      "parking_stop_active": false,
+      "parking_stop": "",
+      "parking_category": null
     },
-    "gripper": null,
+    "gripper": {
+      "device_id": 1,
+      "device_type": 6,
+      "positions_rad": [
+        0.24859132385960378
+      ],
+      "torques_nm": [
+        -0.008658000946044922
+      ]
+    },
     "error": null
   },
   "right_arm": {
     "name": "right_arm",
     "ws_url": "ws://[fe80::cc44:e4ff:fecf:de48%enx00e04c680044]:9439",
+    "transport": "passive_zero_write_ws",
     "connected": true,
     "arm": {
-      "arm_name": "firefly_y6_40",
+      "robot_type": 39,
+      "session_id": 6,
+      "session_holder": 0,
+      "api_control_initialized": false,
+      "calibrated": true,
       "motor_count": 6,
       "joint_names": [
         "joint_1",
@@ -114,15 +135,15 @@
         "joint_6"
       ],
       "positions_rad": [
-        0.002686107076257153,
-        -1.569590485498467,
-        3.1437255602842584,
-        0.019612897404336586,
-        0.00658023828990866,
-        -0.012374611031648563
+        0.0026198371659174133,
+        -1.507503069650697,
+        3.063132218473112,
+        0.02092067594713362,
+        -6.381599762102375e-05,
+        -9.347695426178126e-05
       ],
       "velocities_rad_s": [
-        2.247042169754357e-05,
+        4.494084339508714e-05,
         0.0,
         0.0,
         0.0,
@@ -130,20 +151,20 @@
         0.0
       ],
       "torques_nm": [
-        -0.07897500514984129,
-        0.0,
-        -0.3948750257492065,
-        0.0,
-        0.0,
+        -0.15795001029968259,
+        1.026675066947937,
+        -7.186725468635558,
+        -1.6584751081466675,
+        -0.05194800567626953,
         0.0
       ],
       "temperatures_c": [
-        38.20000076293945,
-        38.900001525878906,
-        36.900001525878906,
-        38.900001525878906,
-        39.10000228881836,
-        41.0
+        45.900001525878906,
+        46.20000076293945,
+        59.10000228881836,
+        46.0,
+        45.70000076293945,
+        48.60000228881836
       ],
       "voltages_v": [
         0.0,
@@ -154,12 +175,12 @@
         0.0
       ],
       "error_codes": [
-        "None",
-        "None",
-        "None",
-        "None",
-        "None",
-        "None"
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
       ],
       "warnings": [
         "",
@@ -169,9 +190,20 @@
         "",
         ""
       ],
-      "parking_stop": ""
+      "parking_stop_active": false,
+      "parking_stop": "",
+      "parking_category": null
     },
-    "gripper": null,
+    "gripper": {
+      "device_id": 1,
+      "device_type": 6,
+      "positions_rad": [
+        0.6825062522472075
+      ],
+      "torques_nm": [
+        0.0
+      ]
+    },
     "error": null
   },
   "mujoco_fk_check": {
@@ -180,251 +212,180 @@
       "left": [
         {
           "joint": "left_joint_1",
-          "q_rad": -0.006847,
+          "q_rad": 0.001165,
           "range_rad": [
             -2.86234,
             2.86234
           ],
           "in_bounds": true,
-          "margin_rad": 2.855493
+          "margin_rad": 2.861175
         },
         {
           "joint": "left_joint_2",
-          "q_rad": -1.574462,
+          "q_rad": -1.50759,
           "range_rad": [
             -1.5708,
             2.0944
           ],
-          "in_bounds": false,
-          "margin_rad": -0.003662
+          "in_bounds": true,
+          "margin_rad": 0.06321
         },
         {
           "joint": "left_joint_3",
-          "q_rad": 3.145433,
+          "q_rad": 3.061977,
           "range_rad": [
             0.0,
             3.14159
           ],
-          "in_bounds": false,
-          "margin_rad": -0.003843
+          "in_bounds": true,
+          "margin_rad": 0.079613
         },
         {
           "joint": "left_joint_4",
-          "q_rad": 0.01283,
+          "q_rad": 0.019902,
           "range_rad": [
             -1.5708,
             1.5708
           ],
           "in_bounds": true,
-          "margin_rad": 1.55797
+          "margin_rad": 1.550898
         },
         {
           "joint": "left_joint_5",
-          "q_rad": 0.000489,
+          "q_rad": 0.000231,
           "range_rad": [
             -1.5708,
             1.5708
           ],
           "in_bounds": true,
-          "margin_rad": 1.570311
+          "margin_rad": 1.570569
         },
         {
           "joint": "left_joint_6",
-          "q_rad": 0.003021,
+          "q_rad": 0.001046,
           "range_rad": [
             -2.96706,
             2.96706
           ],
           "in_bounds": true,
-          "margin_rad": 2.964039
+          "margin_rad": 2.966014
         }
       ],
       "right": [
         {
           "joint": "right_joint_1",
-          "q_rad": 0.002686,
+          "q_rad": 0.00262,
           "range_rad": [
             -2.86234,
             2.86234
           ],
           "in_bounds": true,
-          "margin_rad": 2.859654
+          "margin_rad": 2.85972
         },
         {
           "joint": "right_joint_2",
-          "q_rad": -1.56959,
+          "q_rad": -1.507503,
           "range_rad": [
             -1.5708,
             2.0944
           ],
           "in_bounds": true,
-          "margin_rad": 0.00121
+          "margin_rad": 0.063297
         },
         {
           "joint": "right_joint_3",
-          "q_rad": 3.143726,
+          "q_rad": 3.063132,
           "range_rad": [
             0.0,
             3.14159
           ],
-          "in_bounds": false,
-          "margin_rad": -0.002136
+          "in_bounds": true,
+          "margin_rad": 0.078458
         },
         {
           "joint": "right_joint_4",
-          "q_rad": 0.019613,
+          "q_rad": 0.020921,
           "range_rad": [
             -1.5708,
             1.5708
           ],
           "in_bounds": true,
-          "margin_rad": 1.551187
+          "margin_rad": 1.549879
         },
         {
           "joint": "right_joint_5",
-          "q_rad": 0.00658,
+          "q_rad": -6.4e-05,
           "range_rad": [
             -1.5708,
             1.5708
           ],
           "in_bounds": true,
-          "margin_rad": 1.56422
+          "margin_rad": 1.570736
         },
         {
           "joint": "right_joint_6",
-          "q_rad": -0.012375,
+          "q_rad": -9.3e-05,
           "range_rad": [
             -2.96706,
             2.96706
           ],
           "in_bounds": true,
-          "margin_rad": 2.954685
+          "margin_rad": 2.966967
         }
       ]
     },
-    "all_in_bounds": false,
+    "all_in_bounds": true,
     "fk": {
       "left_tcp_in_workcell": {
         "pos_m": [
-          0.32889,
-          0.34826,
-          0.27897
+          0.32834,
+          0.35036,
+          0.30371
         ],
         "z_axis": [
-          0.9999,
-          -0.00636,
-          -0.013
+          0.99999,
+          0.0014,
+          -0.00349
         ]
       },
       "left_tcp_in_arm1_base": {
         "pos_m": [
-          0.26839,
-          -0.00174,
-          0.18397
+          0.26784,
+          0.00036,
+          0.20871
         ],
         "z_axis": [
-          0.9999,
-          -0.00636,
-          -0.013
+          0.99999,
+          0.0014,
+          -0.00349
         ]
       },
       "right_tcp_in_workcell": {
         "pos_m": [
-          0.32904,
-          -0.34794,
-          0.27682
+          0.32842,
+          -0.34931,
+          0.30281
         ],
         "z_axis": [
-          0.99969,
-          0.00927,
-          -0.02295
+          0.99998,
+          0.00256,
+          -0.00575
         ]
       },
       "right_tcp_in_arm2_base": {
         "pos_m": [
-          0.26854,
-          0.00206,
-          0.18182
+          0.26792,
+          0.00069,
+          0.20781
         ],
         "z_axis": [
-          0.99969,
-          0.00927,
-          -0.02295
+          0.99998,
+          0.00256,
+          -0.00575
         ]
       }
     },
-    "penetrations_gt_0p1mm": [
-      {
-        "geom1": "left_link_1_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.319
-      },
-      {
-        "geom1": "left_link_1_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.279
-      },
-      {
-        "geom1": "left_link_1_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.142
-      },
-      {
-        "geom1": "left_link_1_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.306
-      },
-      {
-        "geom1": "left_link_2_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.253
-      },
-      {
-        "geom1": "left_link_2_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.714
-      },
-      {
-        "geom1": "left_link_2_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.721
-      },
-      {
-        "geom1": "left_link_2_col_0",
-        "geom2": "left_link_5_col_2",
-        "dist_mm": -1.183
-      },
-      {
-        "geom1": "right_link_1_col_0",
-        "geom2": "right_link_5_col_2",
-        "dist_mm": -1.56
-      },
-      {
-        "geom1": "right_link_1_col_0",
-        "geom2": "right_link_5_col_2",
-        "dist_mm": -1.494
-      },
-      {
-        "geom1": "right_link_1_col_0",
-        "geom2": "right_link_5_col_2",
-        "dist_mm": -1.174
-      },
-      {
-        "geom1": "right_link_1_col_0",
-        "geom2": "right_link_5_col_2",
-        "dist_mm": -1.376
-      },
-      {
-        "geom1": "right_link_2_col_0",
-        "geom2": "right_link_5_col_2",
-        "dist_mm": -1.926
-      },
-      {
-        "geom1": "right_link_2_col_0",
-        "geom2": "right_link_5_col_2",
-        "dist_mm": -1.722
-      }
-    ]
+    "penetrations_gt_0p1mm": []
   },
   "realsense": {
     "detected_devices": {
@@ -436,11 +397,6 @@
       "260422274786": {
         "name": "RealSense D405",
         "usb_type": "3.2",
-        "firmware": "5.15.1.55"
-      },
-      "260322270508": {
-        "name": "RealSense D405",
-        "usb_type": "2.1",
         "firmware": "5.15.1.55"
       }
     },
@@ -456,8 +412,8 @@
           3
         ],
         "depth_scale_m": 9.999999747378752e-05,
-        "valid_depth_ratio": 0.5906,
-        "median_depth_m": 0.5325,
+        "valid_depth_ratio": 0.6037,
+        "median_depth_m": 0.5665,
         "sdk_intrinsics": {
           "fx": 394.355,
           "fy": 393.82,
@@ -468,24 +424,8 @@
       },
       "right_d405": {
         "serial": "260322270508",
-        "ok": true,
-        "error": null,
-        "usb_type": "2.1",
-        "shape": [
-          480,
-          640,
-          3
-        ],
-        "depth_scale_m": 9.999999747378752e-05,
-        "valid_depth_ratio": 0.4464,
-        "median_depth_m": 0.5351,
-        "sdk_intrinsics": {
-          "fx": 393.784,
-          "fy": 393.302,
-          "cx": 316.915,
-          "cy": 236.197
-        },
-        "snapshot_path": "/home/lakeside/Documents/Antigravity Robotics/docs/reports/step1_snapshots/right_d405_260322270508_rgb.png"
+        "ok": false,
+        "error": "Serial not detected by librealsense"
       },
       "top_d435": {
         "serial": "262522074656",
@@ -498,7 +438,7 @@
           3
         ],
         "depth_scale_m": 0.0010000000474974513,
-        "valid_depth_ratio": 0.9811,
+        "valid_depth_ratio": 0.9815,
         "median_depth_m": 0.697,
         "sdk_intrinsics": {
           "fx": 603.243,
@@ -510,16 +450,16 @@
       }
     },
     "table_height_estimate": {
-      "sample_count": 18970,
+      "sample_count": 18992,
       "z_arm1_base_p15_p50_p85_m": [
-        -0.0941,
-        -0.0854,
-        -0.0099
+        -0.0942,
+        -0.0853,
+        -0.0084
       ],
       "z_workcell_p15_p50_p85_m": [
-        0.0009,
-        0.0096,
-        0.0851
+        0.0008,
+        0.0097,
+        0.0866
       ],
       "note": "Approximate tabletop plane from central D435 ROI (includes any objects currently on table)."
     }

@@ -114,7 +114,7 @@ async def _read_arm_passive_async(
 ) -> dict[str, Any]:
     connector = ws_connect or websockets.connect
     deadline = time.monotonic() + timeout_s
-    async with connector(ws_url, open_timeout=timeout_s) as ws:
+    async with connector(ws_url, open_timeout=timeout_s, proxy=None) as ws:
         while True:
             rem = deadline - time.monotonic()
             if rem <= 0:
