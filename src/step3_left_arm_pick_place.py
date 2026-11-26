@@ -588,7 +588,8 @@ def execute_step3_pick_place(
         def _hold_and_stream(
             traj: np.ndarray,
             grip_pos: float | None = None,
-            check_carried_grasp: bool = False,
+            min_grip_rad: float | None = None,
+            max_grip_rad: float | None = None,
         ) -> None:
             nonlocal aborted_reason, last_q, last_fresh_t, max_err_seen, max_tau_seen
             nonlocal high_tau_streak, hand_last_fresh_t, hand_last_fresh_q, hand_fresh_in_stage
@@ -629,11 +630,13 @@ def execute_step3_pick_place(
                         hand_last_fresh_q = fresh_gq
                         hand_last_fresh_t = now_t
                         hand_fresh_in_stage += 1
-                        if check_carried_grasp and (fresh_gq < 0.08 or fresh_gq > 0.52):
+                        if (min_grip_rad is not None and fresh_gq < min_grip_rad) or (
+                            max_grip_rad is not None and fresh_gq > max_grip_rad
+                        ):
                             grasp_verified = False
                             aborted_reason = (
-                                f"Carried tissue pack lost/empty grasp mid-transport "
-                                f"(q_grip={fresh_gq:.3f} rad outside [0.08, 0.52])"
+                                f"Gripper pose out of stage bound mid-motion "
+                                f"(q_grip={fresh_gq:.3f} rad outside [{min_grip_rad}, {max_grip_rad}])"
                             )
                             return
                     elif (now_t - hand_last_fresh_t) > stale_timeout_s:
@@ -675,9 +678,9 @@ def execute_step3_pick_place(
                         f"(q_grip={hand_last_fresh_q:.3f} rad > {GRIP_MAX_OPEN_ALLOWED_RAD:.2f}); refusing descend."
                     )
 
-            # 2) Descend to grasp pose (open jaws)
+            # 2) Descend to grasp pose (open jaws — enforce <= GRIP_MAX_OPEN_ALLOWED_RAD on EVERY frame!)
             if aborted_reason is None:
-                _hold_and_stream(segments["descend_grasp"], GRIP_OPEN_RAD)
+                _hold_and_stream(segments["descend_grasp"], GRIP_OPEN_RAD, max_grip_rad=GRIP_MAX_OPEN_ALLOWED_RAD)
 
             if aborted_reason is None:
                 if hand_fresh_in_stage == 0 or hand_last_fresh_q is None:
@@ -717,9 +720,9 @@ def execute_step3_pick_place(
 
             # 4) Lift -> Move to Place (continuously verify carried grasp!) -> Open -> Retreat -> Return to Rest
             if aborted_reason is None and grasp_verified:
-                _hold_and_stream(segments["lift"], GRIP_CLOSE_RAD, check_carried_grasp=True)
-                _hold_and_stream(segments["to_place_hover"], GRIP_CLOSE_RAD, check_carried_grasp=True)
-                _hold_and_stream(segments["descend_place"], GRIP_CLOSE_RAD, check_carried_grasp=True)
+                _hold_and_stream(segments["lift"], GRIP_CLOSE_RAD, min_grip_rad=0.08, max_grip_rad=0.52)
+                _hold_and_stream(segments["to_place_hover"], GRIP_CLOSE_RAD, min_grip_rad=0.08, max_grip_rad=0.52)
+                _hold_and_stream(segments["descend_place"], GRIP_CLOSE_RAD, min_grip_rad=0.08, max_grip_rad=0.52)
 
                 q_grip_before_open = hand_last_fresh_q
                 if aborted_reason is None:
@@ -745,7 +748,7 @@ def execute_step3_pick_place(
                             release_verified = True
 
                 if aborted_reason is None and release_verified:
-                    _hold_and_stream(segments["retreat_place"], GRIP_OPEN_RAD)
+                    _hold_and_stream(segments["retreat_place"], GRIP_OPEN_RAD, max_grip_rad=GRIP_MAX_OPEN_ALLOWED_RAD)
                     _hold_and_stream(segments["return_ready"], GRIP_OPEN_RAD)
                     _hold_and_stream(segments["return_rest"], GRIP_OPEN_RAD)
 

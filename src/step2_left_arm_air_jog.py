@@ -540,25 +540,39 @@ def _install_safe_send_gate(arm_dev: Any, start_blocked: bool = False) -> SafeAr
     return gate
 
 
+def _record_arm_telemetry_presence(arm_dev: Any, api_up_data: Any) -> None:
+    """Preserve proto3 field presence for parking_stop_detail (enum=0) and motor_temperature."""
+    if not (hasattr(api_up_data, "HasField") and api_up_data.HasField("arm_status")):
+        return
+    arm_st = api_up_data.arm_status
+    has_ps = bool(arm_st.HasField("parking_stop_detail"))
+    arm_dev._parking_stop_present = has_ps
+    if has_ps and getattr(arm_dev, "_linked_send_gate", None) is not None:
+        arm_dev._linked_send_gate.latch_stop()
+    arm_dev._missing_temp_joints = [
+        idx
+        for idx, m in enumerate(arm_st.motor_status)
+        if hasattr(m, "HasField") and not m.HasField("motor_temperature")
+    ]
+
+
 def _install_parking_stop_tracker(
     arm_dev: Any,
     initial_api_up: Any = None,
     send_gate: SafeArmSendGate | None = None,
 ) -> None:
-    """Wrap arm_dev._update to preserve proto3 HasField('parking_stop_detail') from frame 0
+    """Wrap arm_dev._update to preserve proto3 field presence from frame 0
     and synchronously latch SafeArmSendGate the instant a parking stop arrives.
     """
     if not hasattr(arm_dev, "_parking_stop_present"):
         arm_dev._parking_stop_present = False
+    if not hasattr(arm_dev, "_missing_temp_joints"):
+        arm_dev._missing_temp_joints = []
     if send_gate is not None:
         arm_dev._linked_send_gate = send_gate
     if initial_api_up is not None:
         try:
-            if hasattr(initial_api_up, "HasField") and initial_api_up.HasField("arm_status"):
-                has_ps = bool(initial_api_up.arm_status.HasField("parking_stop_detail"))
-                arm_dev._parking_stop_present = has_ps
-                if has_ps and getattr(arm_dev, "_linked_send_gate", None) is not None:
-                    arm_dev._linked_send_gate.latch_stop()
+            _record_arm_telemetry_presence(arm_dev, initial_api_up)
         except Exception:
             pass
     if getattr(arm_dev, "_parking_stop_tracker_installed", False):
@@ -569,11 +583,7 @@ def _install_parking_stop_tracker(
 
     def _wrapped_update(api_up_data, timestamp):
         try:
-            if hasattr(api_up_data, "HasField") and api_up_data.HasField("arm_status"):
-                has_ps = bool(api_up_data.arm_status.HasField("parking_stop_detail"))
-                arm_dev._parking_stop_present = has_ps
-                if has_ps and getattr(arm_dev, "_linked_send_gate", None) is not None:
-                    arm_dev._linked_send_gate.latch_stop()
+            _record_arm_telemetry_presence(arm_dev, api_up_data)
         except Exception:
             pass
         return orig_update(api_up_data, timestamp)
@@ -625,7 +635,10 @@ def _safe_read_tau(arm_dev: Any) -> np.ndarray | None:
 
 
 def _check_over_temperature(arm_dev: Any, max_temp_c: float = 65.0) -> str | None:
-    """Fail-closed per-channel temperature check: over-temp OR invalid/NaN/None on any joint aborts."""
+    """Fail-closed per-channel temperature check: missing field, invalid/NaN/None, or over-temp aborts."""
+    missing = getattr(arm_dev, "_missing_temp_joints", None)
+    if missing:
+        return f"Missing motor_temperature field on J{missing[0] + 1}"
     if not hasattr(arm_dev, "get_motor_temperatures"):
         return None
     temps = arm_dev.get_motor_temperatures()

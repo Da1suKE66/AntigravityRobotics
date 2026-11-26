@@ -50,7 +50,10 @@ def decode_api_up_arm_telemetry(raw_bytes: bytes) -> dict[str, Any] | None:
         pos_rad = raw_pos / ppr * (2.0 * np.pi)
     vel = np.array([m.speed for m in motors], dtype=np.float64)
     tau = np.array([m.torque for m in motors], dtype=np.float64)
-    temps = [float(m.motor_temperature) for m in motors]
+    temps = [
+        float(m.motor_temperature) if (not hasattr(m, "HasField") or m.HasField("motor_temperature")) else None
+        for m in motors
+    ]
     volts = [float(m.voltage) for m in motors]
     err_codes = [
         (int(m.error) if isinstance(m.error, (int, float)) else (list(m.error) if len(m.error) > 0 else None))

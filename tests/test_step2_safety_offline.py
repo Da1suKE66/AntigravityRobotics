@@ -853,8 +853,80 @@ def test_step3_empty_close_mid_transport_aborts_immediately():
     )
     assert res["completed"] is False
     assert res["grasp_verified"] is False
-    assert "mid-transport" in (res["aborted_reason"] or "").lower(), res
+    assert "out of stage bound mid-motion" in (res["aborted_reason"] or "").lower(), res
     print("PASS: test_step3_empty_close_mid_transport_aborts_immediately")
+
+
+def test_step3_mid_descend_gripper_drift_above_008_aborts_immediately():
+    """New P1 #1 (part 2): Gripper drifting > 0.08 rad MID-descend MUST abort immediately."""
+    q0 = Q_LEFT_READY.copy()
+    q_descend = q0 + np.array([0.0, 0.25, 0.0, 0.0, 0.0, 0.0])
+    segs = _make_step3_dummy_segments(q0)
+    segs["descend_grasp"] = np.linspace(q0, q_descend, 20)
+
+    arm = _FakeArm(q0)
+    hand = _FakeHand(initial_q=GRIP_OPEN_RAD)
+
+    def _mc_drift_on_descend(cmd_type, values):
+        target = float(values[0])
+        hand.cmds.append(target)
+        # After unfold+to_hover (25+5+5=35 cmds), drift to 0.12 rad on frame 3 of descend!
+        hand.q = 0.12 if len(hand.cmds) >= 38 else target
+
+    hand.motor_command = _mc_drift_on_descend
+    clock, sleep = _make_sim_clock()
+    res = execute_step3_pick_place(
+        segs, api_factory=lambda: _FakeStep3API(arm, hand), sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert "out of stage bound mid-motion" in (res["aborted_reason"] or "").lower(), res
+    # Must abort early in descend_grasp, never reaching q_descend!
+    assert float(np.max(np.abs(arm.q - q_descend))) > 0.15, arm.q
+    print("PASS: test_step3_mid_descend_gripper_drift_above_008_aborts_immediately")
+
+
+def test_step3_missing_motor_temperature_field_in_real_sdk_blocks_startup():
+    """New P1 #4 (part 2): Unset motor_temperature on J2 in real APIUp -> blocks BEFORE arm.start()."""
+    import time as _time
+    from hex_device import Hands
+
+    sent_raw: list[bytes] = []
+
+    def _factory():
+        api = create_guarded_hex_device_api(
+            ws_url=None, control_hz=200, enable_kcp=False, send_down_callback=sent_raw.append
+        )
+        up = public_api_up_pb2.APIUp()
+        up.robot_type = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
+        up.protocol_major_version = 1
+        up.protocol_minor_version = 0
+        up.session_id = 1
+        up.arm_status.calibrated = True
+        for idx, q in enumerate(Q_LEFT_READY):
+            m = up.arm_status.motor_status.add()
+            m.pulse_per_rotation = 65535
+            m.position = int(round(float(q) / (2.0 * np.pi) * 65535))
+            m.torque = 0.0
+            if idx != 1:  # Omit motor_temperature on J2!
+                m.motor_temperature = 40.0
+        # Attach a live GR100 hand so missing-gripper doesn't trigger first
+        sec = up.secondary_device_status.add()
+        sec.device_id = 1
+        sec.device_type = public_api_types_pb2.SecondaryDeviceType.SdtHandGr100
+        hm = sec.hand_status.motor_status.add()
+        hm.pulse_per_rotation = 65535
+        hm.position = int(round(GRIP_OPEN_RAD / (2.0 * np.pi) * 65535))
+        _feed_api_up_threadsafe(api, up)
+        _time.sleep(0.05)
+        return api
+
+    res = execute_step3_pick_place(_make_step3_dummy_segments(Q_LEFT_READY), api_factory=_factory)
+    counts = _count_sent_arm_commands(sent_raw)
+    assert res["completed"] is False
+    assert "missing motor_temperature field on j2" in (res["aborted_reason"] or "").lower(), res
+    assert counts["api_control_init_true"] == 0, counts
+    assert counts["position_cmd"] == 0, counts
+    print("PASS: test_step3_missing_motor_temperature_field_in_real_sdk_blocks_startup")
 
 
 def test_step3_carried_object_wrist_and_forearm_collision_is_caught():
@@ -1102,6 +1174,7 @@ def _make_firefly_api_up(q_rad: np.ndarray, parking_cat: int | None = None, reas
         m.pulse_per_rotation = 65535
         m.position = int(round(float(q) / (2.0 * np.pi) * 65535))
         m.torque = 0.0
+        m.motor_temperature = 40.0
     return up
 
 
@@ -1306,4 +1379,6 @@ if __name__ == "__main__":
     test_step3_open_bound_matches_mujoco_verified_max_open()
     test_step3_nan_gripper_telemetry_never_passes_grasp_or_release()
     test_step3_empty_close_mid_transport_aborts_immediately()
-    print("\nALL 35 OFFLINE SAFETY TESTS PASSED!")
+    test_step3_mid_descend_gripper_drift_above_008_aborts_immediately()
+    test_step3_missing_motor_temperature_field_in_real_sdk_blocks_startup()
+    print("\nALL 37 OFFLINE SAFETY TESTS PASSED!")
