@@ -625,20 +625,22 @@ def _safe_read_tau(arm_dev: Any) -> np.ndarray | None:
 
 
 def _check_over_temperature(arm_dev: Any, max_temp_c: float = 65.0) -> str | None:
-    """Check each motor temperature independently so one None/NaN channel never masks another's over-temp."""
+    """Fail-closed per-channel temperature check: over-temp OR invalid/NaN/None on any joint aborts."""
     if not hasattr(arm_dev, "get_motor_temperatures"):
         return None
     temps = arm_dev.get_motor_temperatures()
-    if temps is None:
-        return None
+    if temps is None or len(temps) == 0:
+        return "Missing motor temperature telemetry"
     for idx, raw_t in enumerate(temps):
         if raw_t is None:
-            continue
+            return f"Invalid motor temperature telemetry on J{idx + 1}: None"
         try:
             t_val = float(raw_t)
         except (TypeError, ValueError):
-            continue
-        if math.isfinite(t_val) and t_val >= max_temp_c:
+            return f"Invalid motor temperature telemetry on J{idx + 1}: {raw_t!r}"
+        if not math.isfinite(t_val):
+            return f"Invalid motor temperature telemetry on J{idx + 1}: {t_val}"
+        if t_val >= max_temp_c:
             return f"Motor J{idx + 1} over-temperature {t_val:.1f}C >= {max_temp_c:.1f}C"
     return None
 

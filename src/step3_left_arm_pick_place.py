@@ -48,6 +48,7 @@ from step2_left_arm_air_jog import (
 #   0.00 rad = fully open (~97.5 mm fingertip gap)
 #   0.60 rad = fully closed (~10.1 mm fingertip gap)
 GRIP_OPEN_RAD = 0.02
+GRIP_MAX_OPEN_ALLOWED_RAD = 0.08  # Both MuJoCo verification & runtime open check use this exact bound
 GRIP_CLOSE_RAD = 0.55
 
 
@@ -314,83 +315,89 @@ def plan_and_verify_step3(
 
     for seg_name, seg in segments.items():
         g_rad = seg_grip_rad[seg_name]
+        # Verify open-jaw segments at BOTH nominal GRIP_OPEN_RAD and worst-case GRIP_MAX_OPEN_ALLOWED_RAD
+        g_check_list = (
+            [GRIP_OPEN_RAD, GRIP_MAX_OPEN_ALLOWED_RAD]
+            if g_rad == GRIP_OPEN_RAD
+            else [g_rad]
+        )
         for k in range(len(seg)):
             total_frames += 1
             q_k = seg[k]
-            mujoco.mj_resetData(verify_model, verify_data)
-            for i, a in enumerate(left_q_adrs):
-                verify_data.qpos[a] = q_k[i]
-            for i, a in enumerate(right_q_adrs):
-                verify_data.qpos[a] = right_q_meas[i]
-            for ga in left_grip_adrs:
-                verify_data.qpos[ga] = g_rad
-
-            # Place mocap object colliders according to stage
-            mujoco.mj_kinematics(verify_model, verify_data)
-            if seg_name in pick_stationary_segs:
-                verify_data.mocap_pos[table_mocap_id] = pick_pos
-                verify_data.mocap_quat[table_mocap_id] = yaw_quat
-                verify_data.mocap_pos[carried_mocap_id] = offscreen_pos
-            elif seg_name in carried_segs:
-                verify_data.mocap_pos[table_mocap_id] = offscreen_pos
-                R_tcp_k = verify_data.site_xmat[left_tcp_sid].reshape(3, 3)
-                p_tcp_k = verify_data.site_xpos[left_tcp_sid]
-                verify_data.mocap_pos[carried_mocap_id] = p_tcp_k + R_tcp_k @ tcp_to_obj_local
-                q_car = np.zeros(4, dtype=np.float64)
-                mujoco.mju_mat2Quat(q_car, (R_tcp_k @ R_obj_in_tcp).ravel())
-                verify_data.mocap_quat[carried_mocap_id] = q_car
-            else:  # placed_stationary_segs
-                verify_data.mocap_pos[table_mocap_id] = place_pos
-                verify_data.mocap_quat[table_mocap_id] = yaw_quat
-                verify_data.mocap_pos[carried_mocap_id] = offscreen_pos
-
-            mujoco.mj_forward(verify_model, verify_data)
-
             if np.any(q_k < left_ranges[:, 0] - 1e-6) or np.any(q_k > left_ranges[:, 1] + 1e-6):
                 limit_violations += 1
 
-            for ci in range(verify_data.ncon):
-                con = verify_data.contact[ci]
-                if con.dist < -1e-4:
-                    g1 = verify_model.geom(con.geom1).name or f"g{con.geom1}"
-                    g2 = verify_model.geom(con.geom2).name or f"g{con.geom2}"
-                    b1 = verify_model.body(verify_model.geom_bodyid[con.geom1]).name
-                    b2 = verify_model.body(verify_model.geom_bodyid[con.geom2]).name
-                    # Ignore contact between carried_object_col and the left gripper jaws holding it,
-                    # but DO catch collisions with left_link_1..5, wrist D405 bracket, right arm, or table!
-                    carried_gripper_bodies = {
-                        "left_grip_link_1",
-                        "left_grip_link_2",
-                        "left_gr100_base_link",
-                        "left_link_6",
-                    }
-                    if (g1 == "carried_object_col" and b2 in carried_gripper_bodies) or (
-                        g2 == "carried_object_col" and b1 in carried_gripper_bodies
-                    ):
-                        continue
-                    if b1.startswith("left_") or b2.startswith("left_") or g1 == "carried_object_col" or g2 == "carried_object_col":
-                        collisions.append((seg_name, k, g1, g2, round(float(-con.dist) * 1000.0, 2)))
+            for g_test in g_check_list:
+                mujoco.mj_resetData(verify_model, verify_data)
+                for i, a in enumerate(left_q_adrs):
+                    verify_data.qpos[a] = q_k[i]
+                for i, a in enumerate(right_q_adrs):
+                    verify_data.qpos[a] = right_q_meas[i]
+                for ga in left_grip_adrs:
+                    verify_data.qpos[ga] = g_test
 
-            for gid in left_col_gids:
-                d_tab = float(mujoco.mj_geomDistance(verify_model, verify_data, gid, table_gid, 1.0, None))
-                min_table_dist = min(min_table_dist, d_tab)
-                if seg_name in pick_stationary_segs or seg_name in placed_stationary_segs:
-                    d_obj = float(mujoco.mj_geomDistance(verify_model, verify_data, gid, obj_gid, 1.0, None))
-                    min_obj_dist = min(min_obj_dist, d_obj)
+                # Place mocap object colliders according to stage
+                mujoco.mj_kinematics(verify_model, verify_data)
+                if seg_name in pick_stationary_segs:
+                    verify_data.mocap_pos[table_mocap_id] = pick_pos
+                    verify_data.mocap_quat[table_mocap_id] = yaw_quat
+                    verify_data.mocap_pos[carried_mocap_id] = offscreen_pos
+                elif seg_name in carried_segs:
+                    verify_data.mocap_pos[table_mocap_id] = offscreen_pos
+                    R_tcp_k = verify_data.site_xmat[left_tcp_sid].reshape(3, 3)
+                    p_tcp_k = verify_data.site_xpos[left_tcp_sid]
+                    verify_data.mocap_pos[carried_mocap_id] = p_tcp_k + R_tcp_k @ tcp_to_obj_local
+                    q_car = np.zeros(4, dtype=np.float64)
+                    mujoco.mju_mat2Quat(q_car, (R_tcp_k @ R_obj_in_tcp).ravel())
+                    verify_data.mocap_quat[carried_mocap_id] = q_car
+                else:  # placed_stationary_segs
+                    verify_data.mocap_pos[table_mocap_id] = place_pos
+                    verify_data.mocap_quat[table_mocap_id] = yaw_quat
+                    verify_data.mocap_pos[carried_mocap_id] = offscreen_pos
 
-            if seg_name in carried_segs:
-                # Non-table obstacles (right arm, workcell): check >= 5 mm clearance on EVERY frame!
-                for egid in env_and_right_gids:
-                    if egid == table_gid:
-                        # Table: must never penetrate (< -0.5 mm), and must have >= 5 mm clearance in transit
-                        d_tab_car = float(mujoco.mj_geomDistance(verify_model, verify_data, carried_gid, table_gid, 1.0, None))
-                        if d_tab_car < -0.0005:
-                            min_carried_env_dist = min(min_carried_env_dist, d_tab_car)
-                        elif (seg_name == "to_place_hover") or (seg_name == "lift" and k >= int(0.4 * len(seg))) or (seg_name == "descend_place" and k <= int(0.6 * len(seg))):
-                            min_carried_env_dist = min(min_carried_env_dist, d_tab_car)
-                    else:
-                        d_car = float(mujoco.mj_geomDistance(verify_model, verify_data, carried_gid, egid, 1.0, None))
-                        min_carried_env_dist = min(min_carried_env_dist, d_car)
+                mujoco.mj_forward(verify_model, verify_data)
+
+                for ci in range(verify_data.ncon):
+                    con = verify_data.contact[ci]
+                    if con.dist < -1e-4:
+                        g1 = verify_model.geom(con.geom1).name or f"g{con.geom1}"
+                        g2 = verify_model.geom(con.geom2).name or f"g{con.geom2}"
+                        b1 = verify_model.body(verify_model.geom_bodyid[con.geom1]).name
+                        b2 = verify_model.body(verify_model.geom_bodyid[con.geom2]).name
+                        # Ignore contact between carried_object_col and the left gripper jaws holding it,
+                        # but DO catch collisions with left_link_1..5, wrist D405 bracket, right arm, or table!
+                        carried_gripper_bodies = {
+                            "left_grip_link_1",
+                            "left_grip_link_2",
+                            "left_gr100_base_link",
+                            "left_link_6",
+                        }
+                        if (g1 == "carried_object_col" and b2 in carried_gripper_bodies) or (
+                            g2 == "carried_object_col" and b1 in carried_gripper_bodies
+                        ):
+                            continue
+                        if b1.startswith("left_") or b2.startswith("left_") or g1 == "carried_object_col" or g2 == "carried_object_col":
+                            collisions.append((seg_name, k, g1, g2, round(float(-con.dist) * 1000.0, 2)))
+
+                for gid in left_col_gids:
+                    d_tab = float(mujoco.mj_geomDistance(verify_model, verify_data, gid, table_gid, 1.0, None))
+                    min_table_dist = min(min_table_dist, d_tab)
+                    if seg_name in pick_stationary_segs or seg_name in placed_stationary_segs:
+                        d_obj = float(mujoco.mj_geomDistance(verify_model, verify_data, gid, obj_gid, 1.0, None))
+                        min_obj_dist = min(min_obj_dist, d_obj)
+
+                if seg_name in carried_segs:
+                    # Non-table obstacles (right arm, workcell): check >= 5 mm clearance on EVERY frame!
+                    for egid in env_and_right_gids:
+                        if egid == table_gid:
+                            d_tab_car = float(mujoco.mj_geomDistance(verify_model, verify_data, carried_gid, table_gid, 1.0, None))
+                            if d_tab_car < -0.0005:
+                                min_carried_env_dist = min(min_carried_env_dist, d_tab_car)
+                            elif (seg_name == "to_place_hover") or (seg_name == "lift" and k >= int(0.4 * len(seg))) or (seg_name == "descend_place" and k <= int(0.6 * len(seg))):
+                                min_carried_env_dist = min(min_carried_env_dist, d_tab_car)
+                        else:
+                            d_car = float(mujoco.mj_geomDistance(verify_model, verify_data, carried_gid, egid, 1.0, None))
+                            min_carried_env_dist = min(min_carried_env_dist, d_car)
 
     blocking = check_perception_unoccluded(perception)
     if limit_violations > 0:
@@ -440,14 +447,20 @@ def _find_gripper_device(api: Any) -> Any:
     return None
 
 
-def _read_fresh_gripper_q(hand_dev: Any) -> float | None:
-    """Pop one fresh gripper position sample if available, else return None."""
+def _read_fresh_gripper_q(hand_dev: Any) -> tuple[float | None, str | None]:
+    """Pop one fresh gripper position sample if available; returns (val, error_msg)."""
     if not hand_dev.has_new_data():
-        return None
+        return None, None
     pos = hand_dev.get_motor_positions(True)
     if pos is None or len(pos) == 0:
-        return None
-    return float(pos[0])
+        return None, "Empty gripper position telemetry"
+    try:
+        val = float(pos[0])
+    except (TypeError, ValueError):
+        return None, f"Non-numeric gripper position telemetry: {pos[0]!r}"
+    if not math.isfinite(val) or val < -0.1 or val > 0.7:
+        return None, f"Invalid/out-of-range gripper telemetry: {val}"
+    return val, None
 
 
 def execute_step3_pick_place(
@@ -572,9 +585,14 @@ def execute_step3_pick_place(
         hand_last_fresh_q: float | None = None
         hand_fresh_in_stage = 0
 
-        def _hold_and_stream(traj: np.ndarray, grip_pos: float | None = None) -> None:
+        def _hold_and_stream(
+            traj: np.ndarray,
+            grip_pos: float | None = None,
+            check_carried_grasp: bool = False,
+        ) -> None:
             nonlocal aborted_reason, last_q, last_fresh_t, max_err_seen, max_tau_seen
             nonlocal high_tau_streak, hand_last_fresh_t, hand_last_fresh_q, hand_fresh_in_stage
+            nonlocal grasp_verified
             if aborted_reason is not None:
                 return
             hand_fresh_in_stage = 0
@@ -603,11 +621,21 @@ def execute_step3_pick_place(
                 _send_arm_command(arm_dev, q_cmd, dq_cmd, tau_g, "mit_grav", kp_mit, kd_mit, vel_lim, acc_lim)
                 if hand_dev is not None and grip_pos is not None:
                     hand_dev.motor_command(CommandType.POSITION, [grip_pos])
-                    fresh_gq = _read_fresh_gripper_q(hand_dev)
+                    fresh_gq, gq_err = _read_fresh_gripper_q(hand_dev)
+                    if gq_err is not None:
+                        aborted_reason = gq_err
+                        return
                     if fresh_gq is not None:
                         hand_last_fresh_q = fresh_gq
                         hand_last_fresh_t = now_t
                         hand_fresh_in_stage += 1
+                        if check_carried_grasp and (fresh_gq < 0.08 or fresh_gq > 0.52):
+                            grasp_verified = False
+                            aborted_reason = (
+                                f"Carried tissue pack lost/empty grasp mid-transport "
+                                f"(q_grip={fresh_gq:.3f} rad outside [0.08, 0.52])"
+                            )
+                            return
                     elif (now_t - hand_last_fresh_t) > stale_timeout_s:
                         aborted_reason = (
                             f"Gripper feedback frozen/stale for {now_t - hand_last_fresh_t:.3f}s "
@@ -620,17 +648,20 @@ def execute_step3_pick_place(
                     sleep_fn(sleep_s)
 
         if aborted_reason is None:
-            # Consume initial open gripper reading before moving
-            _read_fresh_gripper_q(hand_dev)
+            # Consume initial open gripper reading and reject non-finite startup telemetry
+            _, init_gq_err = _read_fresh_gripper_q(hand_dev)
+            if init_gq_err is not None:
+                aborted_reason = init_gq_err
             hand_last_fresh_t = clock_fn()
-            if send_gate is not None:
-                send_gate.allow_execution()
-            arm_dev.start()
-            if hasattr(hand_dev, "set_pos_torque"):
-                hand_dev.set_pos_torque(2.5)
-            hand_dev.motor_command(CommandType.POSITION, [GRIP_OPEN_RAD])
+            if aborted_reason is None:
+                if send_gate is not None:
+                    send_gate.allow_execution()
+                arm_dev.start()
+                if hasattr(hand_dev, "set_pos_torque"):
+                    hand_dev.set_pos_torque(2.5)
+                hand_dev.motor_command(CommandType.POSITION, [GRIP_OPEN_RAD])
 
-            # 1) Unfold -> Hover (verify gripper is actually OPEN before descending onto tissue pack!)
+            # 1) Unfold -> Hover (verify gripper is within MuJoCo-verified GRIP_MAX_OPEN_ALLOWED_RAD before descend!)
             _hold_and_stream(np.repeat(q_live[None, :], 25, axis=0), GRIP_OPEN_RAD)
             _hold_and_stream(segments["unfold"], GRIP_OPEN_RAD)
             _hold_and_stream(segments["to_hover"], GRIP_OPEN_RAD)
@@ -638,10 +669,10 @@ def execute_step3_pick_place(
             if aborted_reason is None:
                 if hand_fresh_in_stage == 0 or hand_last_fresh_q is None:
                     aborted_reason = "No fresh gripper telemetry at hover before descend; refusing descend."
-                elif hand_last_fresh_q > 0.15:
+                elif hand_last_fresh_q > GRIP_MAX_OPEN_ALLOWED_RAD:
                     aborted_reason = (
-                        f"Gripper not open at hover before descend (q_grip={hand_last_fresh_q:.3f} rad > 0.15); "
-                        "refusing descend."
+                        f"Gripper not open within verified bound at hover before descend "
+                        f"(q_grip={hand_last_fresh_q:.3f} rad > {GRIP_MAX_OPEN_ALLOWED_RAD:.2f}); refusing descend."
                     )
 
             # 2) Descend to grasp pose (open jaws)
@@ -653,8 +684,11 @@ def execute_step3_pick_place(
                     aborted_reason = "No fresh gripper telemetry before close; aborting."
                 else:
                     q_grip_before_close = hand_last_fresh_q
-                    if q_grip_before_close > 0.15:
-                        aborted_reason = f"Gripper not open before close (q_grip={q_grip_before_close:.3f} rad > 0.15)."
+                    if q_grip_before_close > GRIP_MAX_OPEN_ALLOWED_RAD:
+                        aborted_reason = (
+                            f"Gripper not open within verified bound before close "
+                            f"(q_grip={q_grip_before_close:.3f} rad > {GRIP_MAX_OPEN_ALLOWED_RAD:.2f})."
+                        )
 
             # 3) Close gripper while holding grasp pose (1.2 s) & require continuous FRESH closure confirmation
             if aborted_reason is None:
@@ -681,11 +715,11 @@ def execute_step3_pick_place(
                     else:
                         grasp_verified = True
 
-            # 4) Lift -> Move to Place -> Open & require FRESH open delta confirmation -> Retreat -> Return to Rest
+            # 4) Lift -> Move to Place (continuously verify carried grasp!) -> Open -> Retreat -> Return to Rest
             if aborted_reason is None and grasp_verified:
-                _hold_and_stream(segments["lift"], GRIP_CLOSE_RAD)
-                _hold_and_stream(segments["to_place_hover"], GRIP_CLOSE_RAD)
-                _hold_and_stream(segments["descend_place"], GRIP_CLOSE_RAD)
+                _hold_and_stream(segments["lift"], GRIP_CLOSE_RAD, check_carried_grasp=True)
+                _hold_and_stream(segments["to_place_hover"], GRIP_CLOSE_RAD, check_carried_grasp=True)
+                _hold_and_stream(segments["descend_place"], GRIP_CLOSE_RAD, check_carried_grasp=True)
 
                 q_grip_before_open = hand_last_fresh_q
                 if aborted_reason is None:
@@ -702,9 +736,9 @@ def execute_step3_pick_place(
                     else:
                         q_grip_after_open = hand_last_fresh_q
                         open_delta = (q_grip_before_open - q_grip_after_open) if q_grip_before_open is not None else 0.0
-                        if q_grip_after_open > 0.15 or open_delta < 0.03:
+                        if q_grip_after_open > GRIP_MAX_OPEN_ALLOWED_RAD or open_delta < 0.03:
                             aborted_reason = (
-                                f"Gripper stuck/did not open at place pose "
+                                f"Gripper stuck/did not open within verified bound at place pose "
                                 f"({q_grip_before_open:.3f} -> {q_grip_after_open:.3f} rad); refusing retreat."
                             )
                         else:

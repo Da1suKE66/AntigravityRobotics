@@ -39,6 +39,7 @@ from step2_left_arm_air_jog import (
 )
 from step3_left_arm_pick_place import (
     GRIP_CLOSE_RAD,
+    GRIP_MAX_OPEN_ALLOWED_RAD,
     GRIP_OPEN_RAD,
     check_perception_unoccluded,
     execute_step3_pick_place,
@@ -760,21 +761,100 @@ def test_step3_single_frame_at_close_start_then_freeze_aborts():
 
 
 def test_step3_nan_or_none_temp_channel_does_not_mask_overtemp():
-    """Comment #4 (P1): NaN/None on J1/J3 must NOT mask 70.0C over-temperature on J2."""
+    """Comment #4 (P1): Invalid temp (NaN/None) on J2 OR overtemp on J2 MUST block startup."""
+    q0 = Q_LEFT_READY.copy()
+    # Case A: J2 over-temperature 70.0C
+    arm_a = _FakeArm(q0)
+    arm_a.get_motor_temperatures = lambda: [40.0, 70.0, 40.0, 40.0, 40.0, 40.0]
+    hand_a = _FakeHand(GRIP_OPEN_RAD)
+    clock_a, sleep_a = _make_sim_clock()
+    res_a = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: _FakeStep3API(arm_a, hand_a), sleep_fn=sleep_a, clock_fn=clock_a
+    )
+    assert res_a["completed"] is False and arm_a.started is False
+    assert "j2 over-temperature 70.0c" in (res_a["aborted_reason"] or "").lower(), res_a
+
+    # Case B: J2 temperature sensor failed (NaN) -> MUST fail-closed before arm.start()!
+    arm_b = _FakeArm(q0)
+    arm_b.get_motor_temperatures = lambda: [40.0, float("nan"), 40.0, 40.0, 40.0, 40.0]
+    hand_b = _FakeHand(GRIP_OPEN_RAD)
+    clock_b, sleep_b = _make_sim_clock()
+    res_b = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: _FakeStep3API(arm_b, hand_b), sleep_fn=sleep_b, clock_fn=clock_b
+    )
+    assert res_b["completed"] is False and arm_b.started is False
+    assert "invalid motor temperature" in (res_b["aborted_reason"] or "").lower(), res_b
+    print("PASS: test_step3_nan_or_none_temp_channel_does_not_mask_overtemp")
+
+
+def test_step3_open_bound_matches_mujoco_verified_max_open():
+    """New P1 #1: Gripper open > GRIP_MAX_OPEN_ALLOWED_RAD (e.g. 0.12 rad) aborts before descend."""
     q0 = Q_LEFT_READY.copy()
     arm = _FakeArm(q0)
-    arm.get_motor_temperatures = lambda: [float("nan"), 70.0, None, 40.0, 40.0, 40.0]
-    hand = _FakeHand(GRIP_OPEN_RAD)
-    api = _FakeStep3API(arm, hand)
+    hand = _FakeHand(initial_q=0.12)
+    hand.motor_command = lambda cmd_type, values: hand.cmds.append(float(values[0]))
     clock, sleep = _make_sim_clock()
 
     res = execute_step3_pick_place(
-        _make_step3_dummy_segments(q0), api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+        _make_step3_dummy_segments(q0), api_factory=lambda: _FakeStep3API(arm, hand), sleep_fn=sleep, clock_fn=clock
     )
     assert res["completed"] is False
-    assert "j2 over-temperature 70.0c" in (res["aborted_reason"] or "").lower(), res
-    assert arm.started is False
-    print("PASS: test_step3_nan_or_none_temp_channel_does_not_mask_overtemp")
+    assert "within verified bound" in (res["aborted_reason"] or "").lower(), res
+    assert GRIP_MAX_OPEN_ALLOWED_RAD <= 0.08
+    print("PASS: test_step3_open_bound_matches_mujoco_verified_max_open")
+
+
+def test_step3_nan_gripper_telemetry_never_passes_grasp_or_release():
+    """New P1 #2: NaN gripper position telemetry MUST abort immediately, never pass grasp/release."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    hand = _FakeHand(initial_q=GRIP_OPEN_RAD)
+
+    def _mc_nan_on_close(cmd_type, values):
+        target = float(values[0])
+        hand.cmds.append(target)
+        if target > 0.3:
+            hand.q = float("nan")
+        else:
+            hand.q = target
+
+    hand.motor_command = _mc_nan_on_close
+    clock, sleep = _make_sim_clock()
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: _FakeStep3API(arm, hand), sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert res["grasp_verified"] is False
+    assert "invalid/out-of-range gripper telemetry" in (res["aborted_reason"] or "").lower(), res
+    print("PASS: test_step3_nan_gripper_telemetry_never_passes_grasp_or_release")
+
+
+def test_step3_empty_close_mid_transport_aborts_immediately():
+    """New P1 #3: Dropping tissue pack mid-lift/transport (q_grip -> 0.55 rad) aborts immediately."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    hand = _FakeHand(initial_q=GRIP_OPEN_RAD)
+    close_seen = [0]
+
+    def _mc_drop_mid_transport(cmd_type, values):
+        target = float(values[0])
+        hand.cmds.append(target)
+        if target > 0.3:
+            close_seen[0] += 1
+            # Holds 0.28 rad during 120-tick close hold, then slips empty (0.55) on 2nd tick of lift!
+            hand.q = 0.28 if close_seen[0] <= 122 else 0.55
+        else:
+            hand.q = target
+
+    hand.motor_command = _mc_drop_mid_transport
+    clock, sleep = _make_sim_clock()
+    res = execute_step3_pick_place(
+        _make_step3_dummy_segments(q0), api_factory=lambda: _FakeStep3API(arm, hand), sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert res["grasp_verified"] is False
+    assert "mid-transport" in (res["aborted_reason"] or "").lower(), res
+    print("PASS: test_step3_empty_close_mid_transport_aborts_immediately")
 
 
 def test_step3_carried_object_wrist_and_forearm_collision_is_caught():
@@ -1223,4 +1303,7 @@ if __name__ == "__main__":
     test_step3_single_frame_at_close_start_then_freeze_aborts()
     test_step3_nan_or_none_temp_channel_does_not_mask_overtemp()
     test_step3_carried_object_wrist_and_forearm_collision_is_caught()
-    print("\nALL 32 OFFLINE SAFETY TESTS PASSED!")
+    test_step3_open_bound_matches_mujoco_verified_max_open()
+    test_step3_nan_gripper_telemetry_never_passes_grasp_or_release()
+    test_step3_empty_close_mid_transport_aborts_immediately()
+    print("\nALL 35 OFFLINE SAFETY TESTS PASSED!")

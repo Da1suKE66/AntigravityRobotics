@@ -36,7 +36,7 @@
     "grip_open_rad": 0.02,
     "grip_close_rad": 0.55,
     "min_geom_clearance_table_m": 0.0464,
-    "min_geom_clearance_object_m": 0.0059,
+    "min_geom_clearance_object_m": 0.0022,
     "min_carried_object_clearance_m": 0.036,
     "p_hover_wc_m": [
       0.3859,
