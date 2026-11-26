@@ -31,9 +31,17 @@ from step2_left_arm_air_jog import (
     Q_LEFT_READY,
     SafeArmSendGate,
     _is_parking_stop_active,
+    _send_arm_command,
     create_guarded_hex_device_api,
     execute_left_arm_trajectory,
     plan_and_verify_step2,
+)
+from step3_left_arm_pick_place import (
+    GRIP_CLOSE_RAD,
+    GRIP_OPEN_RAD,
+    check_perception_unoccluded,
+    execute_step3_pick_place,
+    plan_and_verify_step3,
 )
 
 
@@ -347,7 +355,7 @@ def test_mit_grav_mode_constructs_gravity_feedforward_and_returns_to_start():
         def construct_mit_command(self, pos, speed, torque, kp, kd):
             return list(zip(pos, speed, torque, kp, kd))
 
-        def mit_motor_command(self, cmds):
+        def motor_command(self, cmd_type, cmds):
             self.mit_cmds.append(cmds)
             self.cmd_count += 1
             self.q = np.array([c[0] for c in cmds], dtype=np.float64)
@@ -374,6 +382,132 @@ def test_mit_grav_mode_constructs_gravity_feedforward_and_returns_to_start():
     # Verify final pose returned to q0 (not left hovering)
     np.testing.assert_allclose(res["final_q_rad"], q0, atol=1e-4)
     print("PASS: test_mit_grav_mode_constructs_gravity_feedforward_and_returns_to_start")
+
+
+def test_real_sdk_mit_command_updates_timestamp_and_emits_nonzero_targets():
+    """Audit5 #1: _send_arm_command(mit_grav) MUST use motor_command(CommandType.MIT) so real SDK sends MIT targets."""
+    import time as _time
+
+    rt = public_api_types_pb2.RobotType.RtArmFireflyY6_H2_40
+    sent_raw: list[bytes] = []
+    api = create_guarded_hex_device_api(
+        ws_url=None, control_hz=200, enable_kcp=False, send_down_callback=sent_raw.append
+    )
+    try:
+        frame0 = _make_firefly_api_up(Q_LEFT_READY)
+        frame0.arm_status.api_control_initialized = True
+        frame0.arm_status.session_holder = 1
+        _feed_api_up_threadsafe(api, frame0)
+        _time.sleep(0.05)
+
+        arm_dev = api.device_list[0]
+        api.send_gate.allow_execution()
+        arm_dev.start()
+
+        q_cmd = Q_LEFT_READY.copy()
+        dq_cmd = np.zeros(6)
+        tau_ff = np.array([0.0, 1.5, -5.0, -1.0, 0.0, 0.0])
+        _send_arm_command(
+            arm_dev, q_cmd, dq_cmd, tau_ff, "mit_grav",
+            [60, 80, 80, 40, 25, 20], [3, 4, 4, 2, 1.2, 1], [0.6]*6, [1.2]*6,
+        )
+        assert arm_dev._last_command_time is not None, "_last_command_time was NOT updated!"
+        _time.sleep(0.05)
+
+        mit_packets = 0
+        for raw in sent_raw:
+            down = public_api_down_pb2.APIDown()
+            down.ParseFromString(raw)
+            if down.HasField("arm_command") and down.arm_command.HasField("arm_exclusive_command"):
+                excl = down.arm_command.arm_exclusive_command
+                if excl.WhichOneof("exclusive_command") == "arm_api_control_command":
+                    ctrl = excl.arm_api_control_command
+                    if ctrl.WhichOneof("command") == "motor_targets":
+                        t_list = list(ctrl.motor_targets.targets)
+                        if len(t_list) == 6 and t_list[2].HasField("mit_target") and abs(t_list[2].mit_target.torque) > 1.0:
+                            mit_packets += 1
+        assert mit_packets > 0, f"Real SDK loop sent 0 arm_mit_motor_targets! total_pkts={len(sent_raw)}"
+    finally:
+        api.close()
+    print("PASS: test_real_sdk_mit_command_updates_timestamp_and_emits_nonzero_targets")
+
+
+def test_secondary_device_command_blocked_when_stopped():
+    """Audit5 #4: SafeArmSendGate MUST block secondary_device_command (gripper) after stop latch."""
+    from hex_device import Hands
+    from hex_device.motor_base import CommandType
+
+    forwarded = []
+
+    async def fake_send(msg):
+        forwarded.append(msg)
+
+    gate = SafeArmSendGate(fake_send, start_blocked=False)
+    gate.latch_stop()
+
+    hand = Hands(
+        device_id=1,
+        device_type=public_api_types_pb2.SecondaryDeviceType.SdtHandGr100,
+        motor_count=1,
+        proto_version=(1, 0),
+        send_message_callback=gate,
+    )
+    sec_up = public_api_types_pb2.SecondaryDeviceStatus()
+    sec_up.device_id = 1
+    sec_up.device_type = public_api_types_pb2.SecondaryDeviceType.SdtHandGr100
+    hm = sec_up.hand_status.motor_status.add()
+    hm.pulse_per_rotation = 65535
+    hm.position = 1000
+    hand._update_optional_data(
+        public_api_types_pb2.SecondaryDeviceType.SdtHandGr100, sec_up, Timestamp(s=1, ns=0)
+    )
+    hand.motor_command(CommandType.POSITION, [0.3])
+    msg_grip = hand._construct_joint_command_msg()
+    assert gate._classify_blocked(msg_grip) == "post_stop_secondary_device_command"
+    asyncio.run(gate(msg_grip))
+    assert len(forwarded) == 0, "Gripper command leaked past latched stop!"
+    print("PASS: test_secondary_device_command_blocked_when_stopped")
+
+
+def test_step3_fails_closed_when_gripper_missing():
+    """Audit5 #2: Step 3 MUST fail-closed (completed=False, gripper_detected=False) when gripper is missing."""
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    api = _FakeAPI(arm)
+    clock, sleep = _make_sim_clock()
+    segs = {"unfold": np.repeat(q0[None, :], 5, axis=0)}
+
+    res = execute_step3_pick_place(segs, api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock)
+    assert res["completed"] is False
+    assert res["gripper_detected"] is False
+    assert "not detected" in (res["aborted_reason"] or "").lower()
+    assert arm.started is False and arm.cmd_count == 0
+    print("PASS: test_step3_fails_closed_when_gripper_missing")
+
+
+def test_step3_gr100_open_close_and_occlusion_verified():
+    """Audit5 #3 & #5: GR100 open < close, Step 3 verifies gripper DOFs + object, and rejects occluded perception."""
+    assert GRIP_OPEN_RAD < GRIP_CLOSE_RAD, (GRIP_OPEN_RAD, GRIP_CLOSE_RAD)
+
+    _, right_q, perception = _load_saved_data()
+    # Unoccluded perception from Step 2 (~17.6 cm x 7.8 cm)
+    unoccluded = dict(perception)
+    unoccluded["object_footprint_m"] = [0.176, 0.078]
+    unoccluded["object_center_wc_m"] = [0.4056, 0.0506, 0.0898]
+    unoccluded["object_z_top_wc_m"] = 0.095
+    assert check_perception_unoccluded(unoccluded) == []
+
+    plan = plan_and_verify_step3(q_meas=Q_LEFT_READY, right_q_meas=right_q, perception=unoccluded)
+    assert plan["safe_to_execute"] is True, plan["blocking_reasons"]
+    assert plan["min_geom_clearance_object_m"] is not None
+
+    # Occluded perception (~10 cm clipped length) MUST be rejected!
+    occluded = dict(unoccluded)
+    occluded["object_footprint_m"] = [0.098, 0.078]
+    plan_occ = plan_and_verify_step3(q_meas=Q_LEFT_READY, right_q_meas=right_q, perception=occluded)
+    assert plan_occ["safe_to_execute"] is False
+    assert any("occluded" in r.lower() for r in plan_occ["blocking_reasons"])
+    print("PASS: test_step3_gr100_open_close_and_occlusion_verified")
 
 
 def test_passive_reader_matches_real_hex_device_arm_firefly_zero_offset():
@@ -776,4 +910,8 @@ if __name__ == "__main__":
     test_kcp_handshake_and_report_frequency_pass_through_send_gate()
     test_mid_motion_comm_timeout_zero_rearm_in_real_sdk_loop()
     test_mit_grav_mode_constructs_gravity_feedforward_and_returns_to_start()
-    print("\nALL 18 OFFLINE SAFETY TESTS PASSED!")
+    test_real_sdk_mit_command_updates_timestamp_and_emits_nonzero_targets()
+    test_secondary_device_command_blocked_when_stopped()
+    test_step3_fails_closed_when_gripper_missing()
+    test_step3_gr100_open_close_and_occlusion_verified()
+    print("\nALL 22 OFFLINE SAFETY TESTS PASSED!")

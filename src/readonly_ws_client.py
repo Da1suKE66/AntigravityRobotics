@@ -53,7 +53,7 @@ def decode_api_up_arm_telemetry(raw_bytes: bytes) -> dict[str, Any] | None:
     temps = [float(m.motor_temperature) for m in motors]
     volts = [float(m.voltage) for m in motors]
     err_codes = [
-        (list(m.error) if hasattr(m.error, "__iter__") else (int(m.error) if m.error else None))
+        (int(m.error) if isinstance(m.error, (int, float)) else (list(m.error) if len(m.error) > 0 else None))
         for m in motors
     ]
     warnings = [str(m.motor_warning) for m in motors]

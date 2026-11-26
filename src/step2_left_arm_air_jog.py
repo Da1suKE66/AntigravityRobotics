@@ -487,30 +487,40 @@ class SafeArmSendGate:
         self.execution_allowed = False
 
     def _classify_blocked(self, msg: Any) -> str | None:
-        # Non-arm APIDown messages (enable_kcp, placeholder_message/kcp_start, set_report_frequency)
-        # must ALWAYS pass through; in proto3 getattr(msg, "arm_command") returns an empty message
-        # even when unset, so check HasField("arm_command") first.
-        if hasattr(msg, "HasField") and not msg.HasField("arm_command"):
+        # Non-actuator APIDown messages (enable_kcp, placeholder_message/kcp_start,
+        # set_report_frequency) must ALWAYS pass through so KCP & telemetry work.
+        has_arm = hasattr(msg, "HasField") and msg.HasField("arm_command")
+        has_sec = hasattr(msg, "HasField") and msg.HasField("secondary_device_command")
+        if hasattr(msg, "HasField") and not has_arm and not has_sec:
             return None
-        arm_cmd = getattr(msg, "arm_command", None)
-        if arm_cmd is not None:
-            shared = getattr(arm_cmd, "arm_shared_command", None)
-            if shared is not None and getattr(shared, "clear_parking_stop", False):
-                self.latch_stop()
-                return "clear_parking_stop"
-            if self.latched_stopped or not self.execution_allowed:
-                excl = getattr(arm_cmd, "arm_exclusive_command", None)
-                if excl is not None and hasattr(excl, "WhichOneof"):
-                    which = excl.WhichOneof("exclusive_command")
-                    if which == "api_control_initialize":
-                        if excl.api_control_initialize:
-                            return (
-                                "post_stop_api_control_initialize_true"
-                                if self.latched_stopped
-                                else "pre_arm_api_control_initialize_true"
-                            )
-                        return None  # Explicit stop (api_control_initialize=False) is allowed
-                return "post_stop_arm_command" if self.latched_stopped else "pre_arm_arm_command"
+
+        if has_sec and (self.latched_stopped or not self.execution_allowed):
+            return (
+                "post_stop_secondary_device_command"
+                if self.latched_stopped
+                else "pre_arm_secondary_device_command"
+            )
+
+        if has_arm:
+            arm_cmd = getattr(msg, "arm_command", None)
+            if arm_cmd is not None:
+                shared = getattr(arm_cmd, "arm_shared_command", None)
+                if shared is not None and getattr(shared, "clear_parking_stop", False):
+                    self.latch_stop()
+                    return "clear_parking_stop"
+                if self.latched_stopped or not self.execution_allowed:
+                    excl = getattr(arm_cmd, "arm_exclusive_command", None)
+                    if excl is not None and hasattr(excl, "WhichOneof"):
+                        which = excl.WhichOneof("exclusive_command")
+                        if which == "api_control_initialize":
+                            if excl.api_control_initialize:
+                                return (
+                                    "post_stop_api_control_initialize_true"
+                                    if self.latched_stopped
+                                    else "pre_arm_api_control_initialize_true"
+                                )
+                            return None  # Explicit stop (api_control_initialize=False) is allowed
+                    return "post_stop_arm_command" if self.latched_stopped else "pre_arm_arm_command"
         return None
 
     async def __call__(self, msg: Any) -> Any:
@@ -701,7 +711,13 @@ def _send_arm_command(
     vel_lim: list[float],
     acc_lim: list[float],
 ) -> None:
-    if control_mode == "mit_grav" and hasattr(arm_dev, "mit_motor_command") and hasattr(arm_dev, "construct_mit_command"):
+    if (
+        control_mode == "mit_grav"
+        and hasattr(arm_dev, "motor_command")
+        and hasattr(arm_dev, "construct_mit_command")
+    ):
+        from hex_device.motor_base import CommandType
+
         cmds = arm_dev.construct_mit_command(
             pos=q_cmd.tolist(),
             speed=dq_cmd.tolist(),
@@ -709,7 +725,8 @@ def _send_arm_command(
             kp=kp,
             kd=kd,
         )
-        arm_dev.mit_motor_command(cmds)
+        # MUST use motor_command(CommandType.MIT, ...) so _last_command_time is updated!
+        arm_dev.motor_command(CommandType.MIT, cmds)
     else:
         arm_dev.joint_position_control(q_cmd.tolist(), vel_lim, acc_lim)
 
