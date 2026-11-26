@@ -277,10 +277,17 @@ def test_unreached_goal_never_reports_completed():
     clock, sleep = _make_sim_clock()
 
     res = execute_left_arm_trajectory(
-        traj, dt=0.01, goal_tol_rad=0.02, settle_steps=5, api_factory=lambda: api, sleep_fn=sleep, clock_fn=clock
+        traj,
+        dt=0.01,
+        goal_tol_rad=0.02,
+        settle_steps=5,
+        return_to_start=False,
+        api_factory=lambda: api,
+        sleep_fn=sleep,
+        clock_fn=clock,
     )
     assert res["completed"] is False
-    assert "Goal not reached" in (res["aborted_reason"] or "")
+    assert "goal not reached" in (res["aborted_reason"] or "").lower()
     assert arm.stopped is True
     print("PASS: test_unreached_goal_never_reports_completed")
 
@@ -321,9 +328,52 @@ def test_nominal_execution_succeeds():
     )
     assert res["completed"] is True, res
     assert res["aborted_reason"] is None
+    assert res["hover_err_to_goal_rad"] == 0.0
     assert res["final_err_to_goal_rad"] == 0.0
     assert arm.stopped is True and api.closed is True
     print("PASS: test_nominal_execution_succeeds")
+
+
+def test_mit_grav_mode_constructs_gravity_feedforward_and_returns_to_start():
+    """Verify mit_grav mode sends MitMotorCommand with non-zero gravity torque and returns to q0."""
+    q0 = np.array([0.0, 0.75, 0.85, 1.54, 0.0, 0.85], dtype=np.float64)
+    traj = np.linspace(q0, q0 + np.array([0.05, 0.0, 0.0, 0.0, 0.0, 0.0]), 15)
+
+    class _FakeMitArm(_FakeArm):
+        def __init__(self, q_init):
+            super().__init__(q_init)
+            self.mit_cmds = []
+
+        def construct_mit_command(self, pos, speed, torque, kp, kd):
+            return list(zip(pos, speed, torque, kp, kd))
+
+        def mit_motor_command(self, cmds):
+            self.mit_cmds.append(cmds)
+            self.cmd_count += 1
+            self.q = np.array([c[0] for c in cmds], dtype=np.float64)
+
+    arm = _FakeMitArm(q0)
+    api = _FakeAPI(arm)
+    clock, sleep = _make_sim_clock()
+    res = execute_left_arm_trajectory(
+        traj,
+        dt=0.01,
+        settle_steps=5,
+        control_mode="mit_grav",
+        return_to_start=True,
+        api_factory=lambda: api,
+        sleep_fn=sleep,
+        clock_fn=clock,
+    )
+    assert res["completed"] is True, res
+    assert res["control_mode"] == "mit_grav"
+    assert len(arm.mit_cmds) > 0
+    # Verify non-zero MuJoCo gravity torque was sent on J2/J3
+    sample_tau = [c[2] for c in arm.mit_cmds[0]]
+    assert abs(sample_tau[1]) > 0.5 or abs(sample_tau[2]) > 0.5, sample_tau
+    # Verify final pose returned to q0 (not left hovering)
+    np.testing.assert_allclose(res["final_q_rad"], q0, atol=1e-4)
+    print("PASS: test_mit_grav_mode_constructs_gravity_feedforward_and_returns_to_start")
 
 
 def test_passive_reader_matches_real_hex_device_arm_firefly_zero_offset():
@@ -725,4 +775,5 @@ if __name__ == "__main__":
     test_preexisting_comm_timeout_discovery_window_sends_zero_everything_in_real_sdk_loop()
     test_kcp_handshake_and_report_frequency_pass_through_send_gate()
     test_mid_motion_comm_timeout_zero_rearm_in_real_sdk_loop()
-    print("\nALL 17 OFFLINE SAFETY TESTS PASSED!")
+    test_mit_grav_mode_constructs_gravity_feedforward_and_returns_to_start()
+    print("\nALL 18 OFFLINE SAFETY TESTS PASSED!")

@@ -673,19 +673,63 @@ def _check_arm_fault(
     return None, q_now, err, max_tau, last_fresh_t
 
 
+def compute_left_arm_gravity_torque(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    left_q_adrs: list[int],
+    left_dof_adrs: list[int],
+    q_rad: np.ndarray,
+) -> np.ndarray:
+    """Compute exact MuJoCo gravity feedforward torque tau_g(q) for left arm (N*m)."""
+    mujoco.mj_resetData(model, data)
+    for i, adr in enumerate(left_q_adrs):
+        data.qpos[adr] = float(q_rad[i])
+    mujoco.mj_forward(model, data)
+    tau = np.array([float(data.qfrc_bias[d]) for d in left_dof_adrs], dtype=np.float64)
+    limits = np.array([15.0, 15.0, 15.0, 15.0, 4.0, 4.0], dtype=np.float64)
+    return np.clip(tau, -limits, limits)
+
+
+def _send_arm_command(
+    arm_dev: Any,
+    q_cmd: np.ndarray,
+    dq_cmd: np.ndarray,
+    tau_ff: np.ndarray,
+    control_mode: str,
+    kp: list[float],
+    kd: list[float],
+    vel_lim: list[float],
+    acc_lim: list[float],
+) -> None:
+    if control_mode == "mit_grav" and hasattr(arm_dev, "mit_motor_command") and hasattr(arm_dev, "construct_mit_command"):
+        cmds = arm_dev.construct_mit_command(
+            pos=q_cmd.tolist(),
+            speed=dq_cmd.tolist(),
+            torque=tau_ff.tolist(),
+            kp=kp,
+            kd=kd,
+        )
+        arm_dev.mit_motor_command(cmds)
+    else:
+        arm_dev.joint_position_control(q_cmd.tolist(), vel_lim, acc_lim)
+
+
 def execute_left_arm_trajectory(
     traj: np.ndarray,
     dt: float = 0.01,
     max_tracking_err_rad: float = 0.25,
     stale_timeout_s: float = 0.15,
     goal_tol_rad: float = 0.02,
-    settle_steps: int = 50,
+    settle_steps: int = 80,
+    control_mode: str = "mit_grav",
+    return_to_start: bool = True,
+    on_goal_settled: Callable[[], None] | None = None,
     api_factory: Callable[[], Any] | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
     clock_fn: Callable[[], float] = time.perf_counter,
     stop_flag: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
-    """Stream verified trajectory to left arm with immediate-stop fault watchdog."""
+    """Stream verified trajectory to left arm with gravity-compensated MIT & immediate-stop watchdog."""
     stop_requested = False
 
     def _sigint_handler(_sig, _frame):
@@ -693,6 +737,18 @@ def execute_left_arm_trajectory(
         stop_requested = True
 
     old_handler = signal.signal(signal.SIGINT, _sigint_handler)
+
+    # Load MuJoCo dynamics model BEFORE opening controller connection to avoid startup delay
+    dyn_model = mujoco.MjModel.from_xml_path(str(ROOT / "model" / "firefly_dual.xml"))
+    dyn_data = mujoco.MjData(dyn_model)
+    dyn_q_adrs = [
+        int(dyn_model.jnt_qposadr[mujoco.mj_name2id(dyn_model, mujoco.mjtObj.mjOBJ_JOINT, f"left_joint_{i}")])
+        for i in range(1, 7)
+    ]
+    dyn_dof_adrs = [
+        int(dyn_model.jnt_dofadr[mujoco.mj_name2id(dyn_model, mujoco.mjtObj.mjOBJ_JOINT, f"left_joint_{i}")])
+        for i in range(1, 7)
+    ]
 
     if api_factory is None:
         from hex_device import Arm
@@ -711,9 +767,17 @@ def execute_left_arm_trajectory(
     completed_steps = 0
     commands_sent = 0
     final_q: np.ndarray | None = None
+    hover_q: np.ndarray | None = None
+    hover_err: float | None = None
     final_feedback_fresh = False
     arm_dev = None
     send_gate: SafeArmSendGate | None = None
+
+    kp_mit = [60.0, 80.0, 80.0, 40.0, 25.0, 20.0]
+    kd_mit = [3.0, 4.0, 4.0, 2.0, 1.2, 1.0]
+    vel_lim = [0.6] * 6
+    acc_lim = [1.2] * 6
+    zeros6 = np.zeros(6, dtype=np.float64)
 
     def _is_stop() -> bool:
         return stop_requested or (stop_flag is not None and stop_flag())
@@ -722,7 +786,11 @@ def execute_left_arm_trajectory(
         t0 = clock_fn()
         while clock_fn() - t0 < 5.0:
             for dev in api.device_list:
-                is_arm = isinstance(dev, arm_cls) if arm_cls is not None else hasattr(dev, "joint_position_control")
+                is_arm = (
+                    isinstance(dev, arm_cls)
+                    if arm_cls is not None
+                    else (hasattr(dev, "joint_position_control") or hasattr(dev, "mit_motor_command"))
+                )
                 if is_arm and dev.has_new_data():
                     arm_dev = dev
                     break
@@ -761,8 +829,6 @@ def execute_left_arm_trajectory(
                 if start_diff > 0.05:
                     aborted_reason = f"Live arm moved since planning (diff={start_diff:.4f} rad > 0.05)."
 
-        vel_lim = [0.6] * 6
-        acc_lim = [1.2] * 6
         last_fresh_t = clock_fn()
 
         if aborted_reason is None:
@@ -770,24 +836,28 @@ def execute_left_arm_trajectory(
                 send_gate.allow_execution()
             arm_dev.start()
 
-            # Brief bumpless hold at start with fault watchdog active
-            for _ in range(10):
+            # Brief bumpless hold at start with gravity feedforward active
+            for _ in range(25):
                 now_t = clock_fn()
                 aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
                     api, arm_dev, q_live, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
                 )
                 if aborted_reason is not None:
                     break
-                arm_dev.joint_position_control(q_live.tolist(), vel_lim, acc_lim)
+                tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
+                _send_arm_command(arm_dev, q_live, zeros6, tau_g, control_mode, kp_mit, kd_mit, vel_lim, acc_lim)
                 commands_sent += 1
                 sleep_fn(dt)
 
-        # Trajectory streaming loop: check faults BEFORE every command
+        # Forward trajectory streaming loop: check faults BEFORE every command
         t_start = clock_fn()
         if aborted_reason is None:
             for k in range(len(traj)):
                 now_t = clock_fn()
                 q_cmd = traj[k]
+                dq_cmd = (traj[min(k + 1, len(traj) - 1)] - traj[max(k - 1, 0)]) / (
+                    dt if k == 0 or k == len(traj) - 1 else 2.0 * dt
+                )
                 aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
                     api, arm_dev, q_cmd, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
                 )
@@ -796,7 +866,8 @@ def execute_left_arm_trajectory(
                 if aborted_reason is not None:
                     break
 
-                arm_dev.joint_position_control(q_cmd.tolist(), vel_lim, acc_lim)
+                tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
+                _send_arm_command(arm_dev, q_cmd, dq_cmd, tau_g, control_mode, kp_mit, kd_mit, vel_lim, acc_lim)
                 commands_sent += 1
                 completed_steps = k + 1
 
@@ -805,7 +876,7 @@ def execute_left_arm_trajectory(
                 if sleep_s > 0:
                     sleep_fn(sleep_s)
 
-        # Settle ONLY if no abort occurred — and keep watchdog active on every settle tick
+        # Settle at hover goal ONLY if no abort occurred
         if aborted_reason is None:
             for _ in range(settle_steps):
                 now_t = clock_fn()
@@ -816,9 +887,44 @@ def execute_left_arm_trajectory(
                 max_torque_seen = max(max_torque_seen, max_tau)
                 if aborted_reason is not None:
                     break
-                arm_dev.joint_position_control(traj[-1].tolist(), vel_lim, acc_lim)
+                tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
+                _send_arm_command(arm_dev, traj[-1], zeros6, tau_g, control_mode, kp_mit, kd_mit, vel_lim, acc_lim)
                 commands_sent += 1
                 sleep_fn(dt)
+
+        q_hover_end = _safe_read_q(arm_dev, False)
+        hover_q = q_hover_end if q_hover_end is not None else last_q
+        hover_err = float(np.max(np.abs(hover_q - traj[-1])))
+
+        if aborted_reason is None and on_goal_settled is not None:
+            # Capture snapshots while arm is actively holding hover pose!
+            on_goal_settled()
+
+        # Smoothly return to safe start/rest pose before releasing API control (avoids mid-air drop!)
+        if aborted_reason is None and return_to_start:
+            ret_traj = traj[::-1]
+            t_ret = clock_fn()
+            for k in range(len(ret_traj)):
+                now_t = clock_fn()
+                q_cmd = ret_traj[k]
+                dq_cmd = (ret_traj[min(k + 1, len(ret_traj) - 1)] - ret_traj[max(k - 1, 0)]) / (
+                    dt if k == 0 or k == len(ret_traj) - 1 else 2.0 * dt
+                )
+                aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
+                    api, arm_dev, q_cmd, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, _is_stop()
+                )
+                max_err_seen = max(max_err_seen, err)
+                max_torque_seen = max(max_torque_seen, max_tau)
+                if aborted_reason is not None:
+                    break
+                tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
+                _send_arm_command(arm_dev, q_cmd, dq_cmd, tau_g, control_mode, kp_mit, kd_mit, vel_lim, acc_lim)
+                commands_sent += 1
+
+                target_t = t_ret + (k + 1) * dt
+                sleep_s = target_t - clock_fn()
+                if sleep_s > 0:
+                    sleep_fn(sleep_s)
 
         q_end = _safe_read_q(arm_dev, False)
         final_q = q_end if q_end is not None else last_q
@@ -837,9 +943,12 @@ def execute_left_arm_trajectory(
         except Exception:
             pass
 
-    final_err = float(np.max(np.abs(final_q - traj[-1]))) if final_q is not None else None
+    expected_end = traj[0] if return_to_start else traj[-1]
+    final_err = float(np.max(np.abs(final_q - expected_end))) if final_q is not None else None
     if aborted_reason is None and (not final_feedback_fresh):
         aborted_reason = "Final telemetry stale at completion"
+    if aborted_reason is None and (hover_err is None or hover_err > goal_tol_rad):
+        aborted_reason = f"Hover goal not reached: hover_err={hover_err:.4f} rad > goal_tol={goal_tol_rad:.4f} rad"
     if aborted_reason is None and (final_err is None or final_err > goal_tol_rad):
         aborted_reason = f"Goal not reached: final_err={final_err:.4f} rad > goal_tol={goal_tol_rad:.4f} rad"
 
@@ -847,12 +956,16 @@ def execute_left_arm_trajectory(
         aborted_reason is None
         and completed_steps == int(len(traj))
         and final_feedback_fresh
+        and hover_err is not None
+        and hover_err <= goal_tol_rad
         and final_err is not None
         and final_err <= goal_tol_rad
     )
 
     return {
         "completed": bool(completed),
+        "control_mode": control_mode,
+        "return_to_start": bool(return_to_start),
         "aborted_reason": aborted_reason,
         "completed_steps": completed_steps,
         "total_steps": int(len(traj)),
@@ -860,6 +973,8 @@ def execute_left_arm_trajectory(
         "final_feedback_fresh": bool(final_feedback_fresh),
         "max_tracking_err_rad": round(max_err_seen, 4),
         "max_torque_nm": round(max_torque_seen, 3),
+        "hover_q_rad": [round(float(x), 5) for x in hover_q] if hover_q is not None else None,
+        "hover_err_to_goal_rad": round(hover_err, 4) if hover_err is not None else None,
         "final_q_rad": [round(float(x), 5) for x in final_q] if final_q is not None else None,
         "final_err_to_goal_rad": round(final_err, 4) if final_err is not None else None,
     }
@@ -910,6 +1025,8 @@ def main() -> None:
     )
     parser.add_argument("--hover-clearance", type=float, default=0.10, help="Hover height above object top (m).")
     parser.add_argument("--max-vel", type=float, default=0.28, help="Max joint speed (rad/s).")
+    parser.add_argument("--control-mode", choices=["mit_grav", "pos"], default="mit_grav", help="Controller mode.")
+    parser.add_argument("--no-return", action="store_true", help="Do not return to start pose after hover.")
     parser.add_argument("--target-xyz", type=float, nargs=3, default=None, help="Optional override hover XYZ in workcell_base (m).")
     args = parser.parse_args()
 
@@ -966,14 +1083,19 @@ def main() -> None:
             raise RuntimeError("Refusing --execute with --offline-step1; live dual-arm state is required.")
         if not plan["safe_to_execute"]:
             raise RuntimeError(f"Plan failed safety verification — refusing to execute! Reasons: {plan['blocking_reasons']}")
-        print("4) EXECUTING verified low-speed trajectory on real left arm (port 8439)...")
-        exec_res = execute_left_arm_trajectory(traj)
+        print(f"4) EXECUTING verified low-speed trajectory ({args.control_mode}) on real left arm (port 8439)...")
+        snap_holder: dict[str, str] = {}
+        exec_res = execute_left_arm_trajectory(
+            traj,
+            control_mode=args.control_mode,
+            return_to_start=not args.no_return,
+            on_goal_settled=lambda: snap_holder.update(capture_verification_snapshots(out_dir)),
+        )
         print(
             f"   completed={exec_res['completed']}, aborted_reason={exec_res['aborted_reason']}, "
-            f"max_tracking_err={exec_res['max_tracking_err_rad']} rad"
+            f"hover_err={exec_res['hover_err_to_goal_rad']} rad, max_tracking_err={exec_res['max_tracking_err_rad']} rad"
         )
-        print("5) Capturing post-hover verification snapshots...")
-        post_snaps = capture_verification_snapshots(out_dir)
+        post_snaps = snap_holder if snap_holder else capture_verification_snapshots(out_dir)
 
     report = {
         "mode": "execute" if args.execute else ("offline_dry_run" if args.offline_step1 else "dry_run"),

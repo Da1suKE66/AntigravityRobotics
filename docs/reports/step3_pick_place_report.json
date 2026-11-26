@@ -1,0 +1,55 @@
+{
+  "mode": "dry_run",
+  "perception": {
+    "z_table_wc_m": -0.0009,
+    "z_table_arm1_m": -0.0959,
+    "object_center_wc_m": [
+      0.4049,
+      0.0087,
+      0.0889
+    ],
+    "object_center_arm1_m": [
+      0.3444,
+      -0.3413,
+      -0.0061
+    ],
+    "object_z_top_wc_m": 0.0938,
+    "object_footprint_m": [
+      0.1072,
+      0.0892
+    ],
+    "major_axis_wc_xy": [
+      -0.3688,
+      0.9295
+    ],
+    "minor_axis_wc_xy": [
+      -0.9295,
+      -0.3688
+    ],
+    "pixel_area": 11146,
+    "overlay_path": "/home/lakeside/Documents/Antigravity Robotics/docs/reports/step3_snapshots/step2_target_overlay.png"
+  },
+  "plan": {
+    "safe_to_execute": true,
+    "blocking_reasons": [],
+    "total_frames_checked": 7142,
+    "min_geom_clearance_table_m": 0.0537,
+    "p_hover_wc_m": [
+      0.4049,
+      0.0087,
+      0.1738
+    ],
+    "p_grasp_wc_m": [
+      0.4049,
+      0.0087,
+      0.0588
+    ],
+    "p_place_wc_m": [
+      0.4049,
+      0.1487,
+      0.0668
+    ],
+    "total_motion_duration_s": 71.33
+  },
+  "execution": null
+}
