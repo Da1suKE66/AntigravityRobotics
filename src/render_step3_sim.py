@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 import cv2
+import imageio_ffmpeg
 import mujoco
 import numpy as np
 
@@ -76,13 +79,15 @@ def main() -> None:
     mujoco.mju_quat2Mat(R_yaw, yaw_quat)
     R_obj_in_tcp = R_tcp_grasp.T @ R_yaw.reshape(3, 3)
 
+    # Physical jaw angle when clamping an ~80 mm wide soft tissue pack (~0.18 rad -> ~78 mm fingertip gap)
+    grip_hold_rad = 0.18
     seg_grip = {
         "unfold": GRIP_OPEN_RAD,
         "to_hover": GRIP_OPEN_RAD,
         "descend_grasp": GRIP_OPEN_RAD,
-        "lift": GRIP_CLOSE_RAD,
-        "to_place_hover": GRIP_CLOSE_RAD,
-        "descend_place": GRIP_CLOSE_RAD,
+        "lift": grip_hold_rad,
+        "to_place_hover": grip_hold_rad,
+        "descend_place": grip_hold_rad,
         "retreat_place": GRIP_OPEN_RAD,
         "return_ready": GRIP_OPEN_RAD,
         "return_rest": GRIP_OPEN_RAD,
@@ -147,12 +152,14 @@ def main() -> None:
                 mujoco.mj_forward(model, data)
                 renderer.update_scene(data, camera=cam, scene_option=opt)
                 bgr = cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR)
+                fp = perception["object_footprint_m"]
+                h_obj = float(perception["object_z_top_wc_m"]) - float(perception["z_table_wc_m"])
                 cv2.putText(
                     bgr,
-                    f"Step 3 Sim | stage: {seg_name} | grip={g_rad:.2f} rad",
+                    f"Step 3 Sim | {seg_name} | grip={g_rad:.2f} rad | obj={fp[0]*100:.1f}x{fp[1]*100:.1f}x{h_obj*100:.1f} cm",
                     (24, 42),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.9,
+                    0.75,
                     (255, 255, 255),
                     2,
                 )
@@ -167,7 +174,18 @@ def main() -> None:
         top = np.hstack(keyframes[:3])
         bot = np.hstack(keyframes[3:])
         cv2.imwrite(str(out_png), np.vstack([top, bot]))
-    print(f"Saved video: {out_mp4}")
+
+    # Transcode to H.264 (yuv420p) for universal browser/player support
+    tmp_h264 = out_mp4.with_name(f"{out_mp4.stem}_h264.mp4")
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    subprocess.run(
+        [ffmpeg_exe, "-y", "-i", str(out_mp4), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(tmp_h264)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    os.replace(tmp_h264, out_mp4)
+    print(f"Saved H.264 video: {out_mp4}")
     print(f"Saved keyframes: {out_png}")
 
 
