@@ -1000,6 +1000,92 @@ def test_step3_real_sdk_gripper_fifo_drain_and_zero_targets_after_055():
     print("PASS: test_step3_real_sdk_gripper_fifo_drain_and_zero_targets_after_055")
 
 
+def test_step3_transient_0081_followed_by_0079_in_same_batch_aborts():
+    """New P1 #1: Batch [0.081, 0.079] during descend_grasp MUST NOT miss transient 0.081 rad."""
+    from hex_device import Hands
+
+    q0 = Q_LEFT_READY.copy()
+    arm = _FakeArm(q0)
+    hand = Hands(
+        device_id=1,
+        device_type=public_api_types_pb2.SecondaryDeviceType.SdtHandGr100,
+        motor_count=1,
+        proto_version=(1, 0),
+        send_message_callback=lambda m: None,
+    )
+
+    def _push_hand(rad_val: float, ts_ns: int):
+        sec_up = public_api_types_pb2.SecondaryDeviceStatus()
+        sec_up.device_id = 1
+        sec_up.device_type = public_api_types_pb2.SecondaryDeviceType.SdtHandGr100
+        hm = sec_up.hand_status.motor_status.add()
+        hm.pulse_per_rotation = 65535
+        hm.position = int(round(rad_val / (2.0 * np.pi) * 65535))
+        hand._update_optional_data(
+            public_api_types_pb2.SecondaryDeviceType.SdtHandGr100, sec_up, Timestamp(s=1, ns=ts_ns)
+        )
+
+    _push_hand(GRIP_OPEN_RAD, 0)
+    orig_hmc = hand.motor_command
+    cmd_idx = [0]
+
+    def _hmc(ct, vals):
+        cmd_idx[0] += 1
+        if cmd_idx[0] < 38:
+            _push_hand(GRIP_OPEN_RAD, cmd_idx[0] * 1_000_000)
+        elif cmd_idx[0] == 38:
+            # Transient 0.081 rad (> 0.08) followed immediately by 0.079 rad in the SAME batch!
+            _push_hand(0.081, 40_000_000)
+            _push_hand(0.079, 41_000_000)
+        orig_hmc(ct, vals)
+
+    hand.motor_command = _hmc
+    segs = _make_step3_dummy_segments(q0)
+    segs["descend_grasp"] = np.linspace(q0, q0 + np.array([0, 0.2, 0, 0, 0, 0]), 50)
+    clock, sleep = _make_sim_clock()
+
+    res = execute_step3_pick_place(
+        segs, api_factory=lambda: _FakeStep3API(arm, hand), sleep_fn=sleep, clock_fn=clock
+    )
+    assert res["completed"] is False
+    assert "out of stage bound mid-motion" in (res["aborted_reason"] or "").lower(), res
+    print("PASS: test_step3_transient_0081_followed_by_0079_in_same_batch_aborts")
+
+
+def test_step3_out_of_bound_gripper_synchronously_latches_send_gate():
+    """New P1 #2: Out-of-bound GR100 frame synchronously latches SafeArmSendGate in _update_optional_data."""
+    from hex_device import Hands
+    from step3_left_arm_pick_place import _install_gripper_bound_gate
+
+    forwarded = []
+
+    async def fake_send(msg):
+        forwarded.append(msg)
+
+    gate = SafeArmSendGate(fake_send, start_blocked=False)
+    hand = Hands(
+        device_id=1,
+        device_type=public_api_types_pb2.SecondaryDeviceType.SdtHandGr100,
+        motor_count=1,
+        proto_version=(1, 0),
+        send_message_callback=gate,
+    )
+    _install_gripper_bound_gate(hand, gate)
+    hand._active_grip_bounds = (None, 0.08)
+
+    sec_up = public_api_types_pb2.SecondaryDeviceStatus()
+    sec_up.device_id = 1
+    sec_up.device_type = public_api_types_pb2.SecondaryDeviceType.SdtHandGr100
+    hm = sec_up.hand_status.motor_status.add()
+    hm.pulse_per_rotation = 65535
+    hm.position = int(round(0.085 / (2.0 * np.pi) * 65535))
+    hand._update_optional_data(
+        public_api_types_pb2.SecondaryDeviceType.SdtHandGr100, sec_up, Timestamp(s=1, ns=0)
+    )
+    assert gate.latched_stopped is True, "SendGate was NOT synchronously latched on 0.085 rad!"
+    print("PASS: test_step3_out_of_bound_gripper_synchronously_latches_send_gate")
+
+
 def test_step3_carried_object_wrist_and_forearm_collision_is_caught():
     """Comment #5 (P2): carried_object_col contact with left_link_5 or left_wrist_d405_link is NOT ignored."""
     from step3_left_arm_pick_place import build_step3_verification_model
@@ -1453,4 +1539,6 @@ if __name__ == "__main__":
     test_step3_mid_descend_gripper_drift_above_008_aborts_immediately()
     test_step3_missing_motor_temperature_field_in_real_sdk_blocks_startup()
     test_step3_real_sdk_gripper_fifo_drain_and_zero_targets_after_055()
-    print("\nALL 38 OFFLINE SAFETY TESTS PASSED!")
+    test_step3_transient_0081_followed_by_0079_in_same_batch_aborts()
+    test_step3_out_of_bound_gripper_synchronously_latches_send_gate()
+    print("\nALL 40 OFFLINE SAFETY TESTS PASSED!")

@@ -447,8 +447,13 @@ def _find_gripper_device(api: Any) -> Any:
     return None
 
 
-def _read_fresh_gripper_q(hand_dev: Any, max_drain: int = 256) -> tuple[float | None, str | None]:
-    """Drain all queued gripper samples and return the LATEST valid position, else (None, err)."""
+def _read_fresh_gripper_q(
+    hand_dev: Any,
+    min_grip_rad: float | None = None,
+    max_grip_rad: float | None = None,
+    max_drain: int = 256,
+) -> tuple[float | None, str | None]:
+    """Drain all queued gripper samples, check EVERY sample against stage bounds, and return LATEST."""
     if not hand_dev.has_new_data():
         return None, None
     latest_val: float | None = None
@@ -464,8 +469,43 @@ def _read_fresh_gripper_q(hand_dev: Any, max_drain: int = 256) -> tuple[float | 
             return None, f"Non-numeric gripper position telemetry: {pos[0]!r}"
         if not math.isfinite(val) or val < -0.1 or val > 0.7:
             return None, f"Invalid/out-of-range gripper telemetry: {val}"
+        if (min_grip_rad is not None and val < min_grip_rad) or (
+            max_grip_rad is not None and val > max_grip_rad
+        ):
+            return val, (
+                f"Gripper pose out of stage bound mid-motion "
+                f"(q_grip={val:.3f} rad outside [{min_grip_rad}, {max_grip_rad}])"
+            )
         latest_val = val
     return latest_val, None
+
+
+def _install_gripper_bound_gate(hand_dev: Any, send_gate: SafeArmSendGate | None) -> None:
+    """Wrap hand_dev._update_optional_data to synchronously latch send_gate on any out-of-bound sample."""
+    if send_gate is None or getattr(hand_dev, "_grip_bound_gate_installed", False):
+        return
+    hand_dev._active_grip_bounds = (None, None)
+    orig_upd = getattr(hand_dev, "_update_optional_data", None)
+    if orig_upd is None or not callable(orig_upd):
+        return
+
+    def _wrapped_hand_update(device_type, sec_status, timestamp):
+        res = orig_upd(device_type, sec_status, timestamp)
+        try:
+            lo, hi = getattr(hand_dev, "_active_grip_bounds", (None, None))
+            if (lo is not None or hi is not None) and hasattr(sec_status, "HasField") and sec_status.HasField("hand_status"):
+                hm = sec_status.hand_status.motor_status
+                if hm:
+                    ppr = float(hm[0].pulse_per_rotation) or 1.0
+                    q_val = float(hm[0].position) / ppr * (2.0 * math.pi)
+                    if not math.isfinite(q_val) or (lo is not None and q_val < lo) or (hi is not None and q_val > hi):
+                        send_gate.latch_stop()
+        except Exception:
+            pass
+        return res
+
+    hand_dev._update_optional_data = _wrapped_hand_update
+    hand_dev._grip_bound_gate_installed = True
 
 
 def execute_step3_pick_place(
@@ -554,6 +594,8 @@ def execute_step3_pick_place(
 
         send_gate = getattr(api, "send_gate", None) or _install_safe_send_gate(arm_dev, start_blocked=True)
         _install_parking_stop_tracker(arm_dev, send_gate=send_gate)
+        if hand_dev is not None:
+            _install_gripper_bound_gate(hand_dev, send_gate)
 
         # Pre-start fail-closed gates BEFORE allow_execution() / arm_dev.start() / hand commands!
         if hand_dev is None or not hand_dev.has_new_data():
@@ -602,61 +644,67 @@ def execute_step3_pick_place(
             if aborted_reason is not None:
                 return
             hand_fresh_in_stage = 0
+            if hand_dev is not None:
+                hand_dev._active_grip_bounds = (min_grip_rad, max_grip_rad)
             t_seg = clock_fn()
-            for k in range(len(traj)):
-                now_t = clock_fn()
-                q_cmd = traj[k]
-                dq_cmd = (traj[min(k + 1, len(traj) - 1)] - traj[max(k - 1, 0)]) / (
-                    dt if k == 0 or k == len(traj) - 1 else 2.0 * dt
-                )
-                aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
-                    api, arm_dev, q_cmd, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, stop_requested
-                )
-                max_err_seen = max(max_err_seen, err)
-                max_tau_seen = max(max_tau_seen, max_tau)
-                if max_tau >= sustained_torque_limit_nm:
-                    high_tau_streak += 1
-                    if aborted_reason is None and high_tau_streak >= sustained_torque_max_steps:
-                        aborted_reason = f"Sustained high torque >= {sustained_torque_limit_nm:.1f} Nm for {high_tau_streak} steps"
-                else:
-                    high_tau_streak = 0
-                if aborted_reason is not None:
-                    return
-
-                # Check latest gripper feedback & stage bounds BEFORE sending any arm/gripper motion command!
-                if hand_dev is not None and grip_pos is not None:
-                    fresh_gq, gq_err = _read_fresh_gripper_q(hand_dev)
-                    if gq_err is not None:
-                        aborted_reason = gq_err
+            try:
+                for k in range(len(traj)):
+                    now_t = clock_fn()
+                    q_cmd = traj[k]
+                    dq_cmd = (traj[min(k + 1, len(traj) - 1)] - traj[max(k - 1, 0)]) / (
+                        dt if k == 0 or k == len(traj) - 1 else 2.0 * dt
+                    )
+                    aborted_reason, last_q, err, max_tau, last_fresh_t = _check_arm_fault(
+                        api, arm_dev, q_cmd, last_q, now_t, last_fresh_t, stale_timeout_s, max_tracking_err_rad, stop_requested
+                    )
+                    max_err_seen = max(max_err_seen, err)
+                    max_tau_seen = max(max_tau_seen, max_tau)
+                    if max_tau >= sustained_torque_limit_nm:
+                        high_tau_streak += 1
+                        if aborted_reason is None and high_tau_streak >= sustained_torque_max_steps:
+                            aborted_reason = f"Sustained high torque >= {sustained_torque_limit_nm:.1f} Nm for {high_tau_streak} steps"
+                    else:
+                        high_tau_streak = 0
+                    if aborted_reason is not None:
+                        if send_gate is not None:
+                            send_gate.latch_stop()
                         return
-                    if fresh_gq is not None:
-                        hand_last_fresh_q = fresh_gq
-                        hand_last_fresh_t = now_t
-                        hand_fresh_in_stage += 1
-                        if (min_grip_rad is not None and fresh_gq < min_grip_rad) or (
-                            max_grip_rad is not None and fresh_gq > max_grip_rad
-                        ):
+
+                    # Check EVERY queued gripper sample & stage bounds BEFORE sending any motion command!
+                    if hand_dev is not None and grip_pos is not None:
+                        fresh_gq, gq_err = _read_fresh_gripper_q(
+                            hand_dev, min_grip_rad=min_grip_rad, max_grip_rad=max_grip_rad
+                        )
+                        if gq_err is not None:
+                            if send_gate is not None:
+                                send_gate.latch_stop()
                             grasp_verified = False
+                            aborted_reason = gq_err
+                            return
+                        if fresh_gq is not None:
+                            hand_last_fresh_q = fresh_gq
+                            hand_last_fresh_t = now_t
+                            hand_fresh_in_stage += 1
+                        elif (now_t - hand_last_fresh_t) > stale_timeout_s:
+                            if send_gate is not None:
+                                send_gate.latch_stop()
                             aborted_reason = (
-                                f"Gripper pose out of stage bound mid-motion "
-                                f"(q_grip={fresh_gq:.3f} rad outside [{min_grip_rad}, {max_grip_rad}])"
+                                f"Gripper feedback frozen/stale for {now_t - hand_last_fresh_t:.3f}s "
+                                f"(> {stale_timeout_s:.3f}s)"
                             )
                             return
-                    elif (now_t - hand_last_fresh_t) > stale_timeout_s:
-                        aborted_reason = (
-                            f"Gripper feedback frozen/stale for {now_t - hand_last_fresh_t:.3f}s "
-                            f"(> {stale_timeout_s:.3f}s)"
-                        )
-                        return
 
-                tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
-                _send_arm_command(arm_dev, q_cmd, dq_cmd, tau_g, "mit_grav", kp_mit, kd_mit, vel_lim, acc_lim)
-                if hand_dev is not None and grip_pos is not None:
-                    hand_dev.motor_command(CommandType.POSITION, [grip_pos])
+                    tau_g = compute_left_arm_gravity_torque(dyn_model, dyn_data, dyn_q_adrs, dyn_dof_adrs, last_q)
+                    _send_arm_command(arm_dev, q_cmd, dq_cmd, tau_g, "mit_grav", kp_mit, kd_mit, vel_lim, acc_lim)
+                    if hand_dev is not None and grip_pos is not None:
+                        hand_dev.motor_command(CommandType.POSITION, [grip_pos])
 
-                sleep_s = t_seg + (k + 1) * dt - clock_fn()
-                if sleep_s > 0:
-                    sleep_fn(sleep_s)
+                    sleep_s = t_seg + (k + 1) * dt - clock_fn()
+                    if sleep_s > 0:
+                        sleep_fn(sleep_s)
+            finally:
+                if hand_dev is not None:
+                    hand_dev._active_grip_bounds = (None, None)
 
         if aborted_reason is None:
             # Consume initial open gripper reading and reject non-finite startup telemetry
